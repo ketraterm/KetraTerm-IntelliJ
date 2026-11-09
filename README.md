@@ -120,21 +120,20 @@ See [dependencies and local builds](Module.md#dependencies-and-local-build).
 ## Documentation
 
 - [CHANGELOG.md](CHANGELOG.md): plugin release history.
+- [Release guide](docs/releases.md): release bot setup, publishing, and retries.
 - [plugin.xml](src/main/resources/META-INF/plugin.xml): registrations and required IDE plugins.
 
 ## CI and release ownership
 
 The Test Suite workflow runs formatting, tests, packaging, and the bundled-runtime
-check. The Release workflow runs on a pushed `v{version}` tag, verifies that the
-tag matches this repository's `VERSION`, runs Plugin Verifier against the
-configured target IDE, and attaches the installable ZIP to a GitHub release.
+check. Maintainers run the Release workflow manually on `master` after updating
+the plugin's `VERSION` and `Unreleased` changelog. The release bot finalizes the
+changelog, verifies the plugin, commits and tags the release, and attaches the
+verified ZIP to a GitHub release. Optional Marketplace publishing runs before
+GitHub publication. See the [release guide](docs/releases.md) for bot credentials,
+Marketplace configuration, and retry instructions.
 
-Before tagging, bump the plugin `VERSION` and finalize the leading changelog
-section as `## [{version}] - YYYY-MM-DD`. Library upgrades are separate changes to
-`ketratermVersion` and require the same runtime and compatibility checks.
-
-GitHub releases do not automatically publish to JetBrains Marketplace. Set the
-repository variable `PUBLISH_TO_MARKETPLACE=true` and the Actions secret
-`PUBLISH_TOKEN` to enable Marketplace publishing after release verification.
+Library upgrades are separate changes to `ketratermVersion` and require the same
+runtime and compatibility checks.
 
 Remaining IDE verification work is tracked in the [plugin gap map](docs/feature-gap-map.md).

@@ -1,52 +1,166 @@
 name: Release
+
 on:
-  push:
-    tags: ['v*']
+  workflow_dispatch:
+
 permissions:
-  contents: write
+  contents: read
+
 concurrency:
   group: release
   cancel-in-progress: false
+
 jobs:
-  release:
+  prepare:
+    name: Prepare release from VERSION
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-26.04
     timeout-minutes: 45
+    outputs:
+      needed: ${{ steps.prepare.outputs.needed }}
+      revision: ${{ steps.commit.outputs.revision }}
+      tag: ${{ steps.prepare.outputs.tag }}
+      prerelease: ${{ steps.prepare.outputs.prerelease }}
+    env:
+      RELEASE: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Read all published releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/releases.json"
+      - name: Prepare versioned changelog
+        id: prepare
+        run: node .github/scripts/release.mjs prepare "$RUNNER_TEMP/releases.json"
+      - name: Check release bot credentials
+        if: steps.prepare.outputs.needed == 'true' && steps.prepare.outputs.existing_tag != 'true'
+        env:
+          RELEASE_APP_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$RELEASE_APP_CLIENT_ID" || -z "$RELEASE_APP_PRIVATE_KEY" ]]; then
+            echo '::error::Configure the RELEASE_APP_CLIENT_ID Actions variable and RELEASE_APP_PRIVATE_KEY Actions secret for the release bot. See docs/releases.md.'
+            exit 1
+          fi
+      - name: Authenticate release bot
+        if: steps.prepare.outputs.needed == 'true' && steps.prepare.outputs.existing_tag != 'true'
+        id: release-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+      - uses: ./.github/actions/setup-jvm
+        if: steps.prepare.outputs.needed == 'true'
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Install system dependencies
+        if: steps.prepare.outputs.needed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb fonts-dejavu-core
+      - name: Verify release before creating tag
+        if: steps.prepare.outputs.needed == 'true'
+        run: |
+          node --test .github/scripts/*.test.mjs
+          xvfb-run -a ./gradlew spotlessCheck check verifyPlugin "-Djava.awt.headless=true" --no-daemon --continue
+      - name: Upload failed release verification reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verification-reports
+          overwrite: true
+          path: |
+            build/reports/
+      - name: Commit changelog and create tag atomically
+        if: steps.prepare.outputs.needed == 'true'
+        id: commit
+        env:
+          TAG: ${{ steps.prepare.outputs.tag }}
+          EXISTING_TAG: ${{ steps.prepare.outputs.existing_tag }}
+          RELEASE_PUSH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: |
+          if [[ "$EXISTING_TAG" != true ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add VERSION CHANGELOG.md
+            if ! git diff --cached --quiet; then
+              git commit -m "Release $TAG"
+            fi
+            git tag "$TAG"
+            auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$RELEASE_PUSH_TOKEN" | base64 -w 0)"
+            echo "::add-mask::$auth_header"
+            git -c "http.$GITHUB_SERVER_URL/.extraheader=$auth_header" push --atomic origin HEAD:refs/heads/master "refs/tags/$TAG"
+          fi
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Stage verified distribution
+        if: steps.prepare.outputs.needed == 'true'
+        run: |
+          mkdir -p build/release-distribution
+          cp build/distributions/*.zip build/release-distribution/
+          cp build/release-notes.md build/release-distribution/
+      - name: Retain verified distribution
+        if: steps.prepare.outputs.needed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-release-${{ steps.prepare.outputs.tag }}
+          overwrite: true
+          path: build/release-distribution/
+
+  marketplace:
+    name: Publish to JetBrains Marketplace
+    needs: prepare
+    if: needs.prepare.outputs.needed == 'true' && vars.PUBLISH_TO_MARKETPLACE == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
     env:
       RELEASE: 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
       - uses: ./.github/actions/setup-jvm
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Test release automation
-        run: node --test .github/scripts/*.test.mjs
-      - name: Validate release version and notes
-        run: node .github/scripts/release-notes.mjs
-      - name: Install virtual display
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb fonts-dejavu-core
-      - name: Verify and package
-        run: xvfb-run -a ./gradlew spotlessCheck check verifyPlugin "-Djava.awt.headless=true" --continue
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          releaseFlags=()
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then releaseFlags+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" build/distributions/*.zip --verify-tag --title "$GITHUB_REF_NAME" --notes-file build/release-notes.md "${releaseFlags[@]}"
-      - name: Publish to Marketplace
-        if: vars.PUBLISH_TO_MARKETPLACE == 'true'
+      - name: Publish the verified revision
         env:
           PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
         run: ./gradlew publishPlugin
-      - uses: actions/upload-artifact@v4
-        if: always()
+
+  github-release:
+    name: Publish GitHub release
+    needs: [prepare, marketplace]
+    if: >-
+      always() &&
+      needs.prepare.result == 'success' &&
+      needs.prepare.outputs.needed == 'true' &&
+      (needs.marketplace.result == 'success' || needs.marketplace.result == 'skipped')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
         with:
-          name: release-reports
-          path: |
-            build/reports/
-            build/test-results/
+          name: plugin-release-${{ needs.prepare.outputs.tag }}
+          path: release
+      - name: Publish the verified distribution and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          REVISION: ${{ needs.prepare.outputs.revision }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          releaseFlags=()
+          if [[ "$PRERELEASE" == true ]]; then releaseFlags+=(--prerelease); fi
+          gh release create "$TAG" release/*.zip --repo "$GITHUB_REPOSITORY" --verify-tag --target "$REVISION" --title "$TAG" --notes-file release/release-notes.md "${releaseFlags[@]}"
