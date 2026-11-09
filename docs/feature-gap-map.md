@@ -8,9 +8,3 @@ capabilities follow the versioned KetraTerm library catalogs linked there.
 - Add installed-plugin smoke tests to release verification. Fixture tests,
   archive checks, and Plugin Verifier do not establish installed-product shell,
   focus, clipboard, or disposal behavior across supported IDEs.
-
-- Remove internal IntelliJ hyperlink API usage in
-  [detection](../src/main/kotlin/io/github/ketraterm/intellij/ui/IntellijTerminalHyperlinkDetector.kt)
-  and [metadata adaptation](../src/main/kotlin/io/github/ketraterm/intellij/ui/IntellijTerminalHyperlinkMetadata.kt).
-  Plugin Verifier reports four internal-API findings for invisible-link and
-  hovered-attribute access against IU-262.8665.258; the release gate rejects them.

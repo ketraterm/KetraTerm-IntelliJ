@@ -15,6 +15,7 @@
  */
 
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 import java.util.zip.ZipFile
 
@@ -164,6 +165,13 @@ intellijPlatform {
     }
 
     pluginVerification {
+        // Console-link visibility and hover metadata have no public SDK equivalents.
+        failureLevel.set(
+            listOf(
+                FailureLevel.COMPATIBILITY_PROBLEMS,
+                FailureLevel.OVERRIDE_ONLY_API_USAGES,
+            ),
+        )
         ides {
             current()
         }

@@ -2,7 +2,6 @@
 
 ## [Unreleased]
 
-- Moved IntelliJ integration into its own repository, with independent versioning, CI, and published KetraTerm dependencies.
 
 ## [0.5.0] - 2026-11-09
 
