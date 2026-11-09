@@ -29,12 +29,12 @@ import com.intellij.ui.UiInterceptors
 import com.intellij.util.concurrency.AppExecutorUtil
 import io.github.ketraterm.core.TerminalBuffers
 import io.github.ketraterm.host.*
+import io.github.ketraterm.intellij.support.MockConnector
 import io.github.ketraterm.intellij.ui.IntellijMessageDialogs
 import io.github.ketraterm.intellij.ui.IntellijTerminalClipboardHandler
 import io.github.ketraterm.session.TerminalClipboardReader
 import io.github.ketraterm.session.TerminalSession
 import io.github.ketraterm.session.TerminalSessionState
-import io.github.ketraterm.testkit.MockConnector
 import io.github.ketraterm.ui.swing.host.SwingClipboardPrompts
 import io.github.ketraterm.ui.swing.host.SwingClipboardReadPrompt
 import io.github.ketraterm.ui.swing.host.SwingClipboardReader

@@ -26,7 +26,7 @@ plugins {
 }
 
 val repositoryVersionProvider =
-    providers.fileContents(layout.projectDirectory.file("../VERSION")).asText.map { it.trim() }
+    providers.fileContents(layout.projectDirectory.file("VERSION")).asText.map { it.trim() }
 val isReleaseBuild =
     providers.environmentVariable("RELEASE").map { it.equals("true", ignoreCase = true) }.orElse(false)
 val pluginVersionProvider =
@@ -57,7 +57,7 @@ val pluginChangeNotes =
 
 version = pluginVersionProvider.get()
 
-private val ketratermVersion = version.toString()
+private val ketratermVersion = providers.gradleProperty("ketratermVersion").get()
 
 // Read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin.html
 dependencies {
@@ -96,11 +96,6 @@ dependencies {
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
     }
-    testImplementation("io.github.ketraterm:ketraterm-testkit:$ketratermVersion") {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
-    }
-
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         intellijIdea(intellijIdeaVersion)
@@ -165,6 +160,13 @@ intellijPlatform {
 
     publishing {
         channels.set(listOf(pluginPublishChannel.get()))
+        token.set(providers.environmentVariable("PUBLISH_TOKEN"))
+    }
+
+    pluginVerification {
+        ides {
+            current()
+        }
     }
 }
 
@@ -184,7 +186,7 @@ spotless {
     kotlin {
         target("src/**/*.kt")
         ktlint("1.3.1")
-        licenseHeaderFile(file("../gradle/license-header.txt"))
+        licenseHeaderFile(file("gradle/license-header.txt"))
     }
     kotlinGradle {
         target("*.gradle.kts")

@@ -21,8 +21,8 @@ import com.intellij.testFramework.replaceService
 import io.github.ketraterm.core.TerminalBuffers
 import io.github.ketraterm.intellij.services.KetraTermCompletionService
 import io.github.ketraterm.intellij.settings.KetraTermIntellijSettings
+import io.github.ketraterm.intellij.support.MockConnector
 import io.github.ketraterm.session.TerminalSession
-import io.github.ketraterm.testkit.MockConnector
 import io.github.ketraterm.ui.swing.settings.TerminalClipboardHandler
 import io.github.ketraterm.ui.swing.suggestion.SwingShellSuggestionProvider
 import io.github.ketraterm.ui.swing.suggestion.SwingShellSuggestionRequest

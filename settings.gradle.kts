@@ -2,8 +2,6 @@ import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
 
 rootProject.name = "ketraterm-intellij-plugin"
 
-includeBuild("..")
-
 pluginManagement {
     plugins {
         id("org.jetbrains.kotlin.jvm") version "2.4.0"

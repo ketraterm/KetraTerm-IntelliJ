@@ -1,19 +1,19 @@
 # Terminal IntelliJ Plugin Agent Guide
 
-Read the repository [AGENTS.md](../AGENTS.md) before editing this module.
-`ketraterm-intellij-plugin` is an independent nested Gradle build. It owns
+This repository is an independent Gradle build. Read [Module.md](Module.md) for
+the component map and [README.md](README.md) for setup. It owns
 IntelliJ-specific product integration and consumes shared KetraTerm libraries.
 
 ## Build Ownership
 
 Keep IntelliJ Gradle plugins, repositories, platform dependencies, packaging, and
-sandbox configuration in this directory. Its settings include the parent build
-with `includeBuild("..")`; keep library dependencies expressed as normal
-coordinates with the repository-derived version. The root build must not depend
-on this build or acquire IntelliJ tooling.
+sandbox configuration in this repository. Shared KetraTerm libraries are
+published dependencies pinned by `ketratermVersion`; the plugin has its own
+`VERSION`. Do not add an unconditional library checkout or Maven-local
+dependency. Shared-library fixes belong in the KetraTerm repository.
 
-Use the plugin's own wrapper. Root and plugin toolchains, wrappers, and platform
-versions are separate configurations even when they share the same source tree.
+Use this repository's wrapper and pinned JBR SDK. Library and plugin toolchains,
+wrappers, platform targets, and release versions are independent.
 The IDE owns the Kotlin/coroutine runtime and Pty4J/JNA native stack. Preserve
 runtime exclusions and the archive/ABI checks when changing dependencies.
 
@@ -53,8 +53,11 @@ IntelliJ fixtures for platform registration, settings persistence, client identi
 keymaps, and disposal contracts. Keep timing and lifecycle tests deterministic;
 avoid real PTYs or visible IDE windows unless the contract requires them.
 
-From this directory, use `./gradlew spotlessApply`, then focused `test` tasks or
+From the repository root, use `./gradlew spotlessApply`, then focused `test` tasks or
 `./gradlew test`. Use `./gradlew check` for archive validation and
 `./gradlew verifyPlugin` after platform or dependency changes. On Windows, use
 `./gradlew.bat`. Fixture tests may require a display server; see the
-[README](README.md#build). Root `test` does not run this independent build.
+[README](README.md#build). The library repository does not run this build.
+
+Preserve released changelog history. Keep public library contracts in the library
+repository and link them here; keep IDE product behavior and setup in this repository.

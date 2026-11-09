@@ -11,9 +11,9 @@ The plugin requires the Git and Gradle bundled plugins declared in its
 [manifest](src/main/resources/META-INF/plugin.xml). Its JVM classes target Java
 25, so the IDE runtime must support that bytecode level.
 
-The plugin is an independent Gradle build. The repository root builds the
-libraries and standalone application; this directory owns IDE packaging and
-sandbox tasks.
+This repository owns IntelliJ integration, packaging, tests, and releases.
+The shared terminal libraries are maintained in
+[KetraTerm](https://github.com/ketraterm/KetraTerm) and resolved from Maven Central.
 
 ## Install and use
 
@@ -37,7 +37,7 @@ command completion; alerts appear only while that terminal pane has no keyboard
 focus, and their text omits the command line.
 
 Completion is enabled by default and configurable in KetraTerm settings; see
-[completion availability](../docs/features/completion.md#availability).
+[completion availability](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/docs/features/completion.md#availability).
 The popup follows IDE colors and your configured terminal font.
 Project-indexed file suggestions apply while the terminal is inside this project's
 content roots. After changing to another project, filesystem and shell completion
@@ -48,7 +48,7 @@ name by its parent directories.
 The **Project** settings page accepts a single startup command. The command is
 submitted once after shell readiness, including in restored tabs; typing before
 readiness cancels it. Shell support and readiness behavior follow the shared
-[workspace startup contract](../ketraterm-workspace/README.md).
+[workspace startup contract](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/ketraterm-workspace/README.md).
 
 Tabs restore their names, shell-profile identities, and local working directories
 using current settings. They start fresh shell processes when shown; restoration
@@ -64,11 +64,11 @@ when their session or owner closes.
 
 ## Build
 
-Use JDK 25 and this directory's Gradle wrapper. The wrapper and IDE target are
-configured independently from the root library build. From the repository root:
+Open this repository directory in IntelliJ IDEA. Use the JetBrains Runtime SDK
+pinned in [the runtime manifest](gradle/jbr-checksums.properties) and this
+repository's Gradle wrapper. From this repository root:
 
 ```text
-cd ketraterm-intellij-plugin
 ./gradlew test
 ./gradlew runIde
 ./gradlew buildPlugin
@@ -81,13 +81,15 @@ IDE dependencies and verification tooling may be downloaded on the first run.
 
 Use `./gradlew spotlessApply` before submitting Kotlin or Gradle changes.
 `./gradlew check` also builds the distribution and checks that it contains no
-Kotlin standard-library JARs. Plugin tests run independently of root `test`.
+Kotlin standard-library JARs. The library repository runs its own tests separately.
 Tests that use IntelliJ fixtures may need a display server; the repository CI
 runs them under Xvfb on Linux.
 
 ### Releases
 
-The version comes from the repository [VERSION](../VERSION) file. Development
+The plugin version comes from this repository's [VERSION](VERSION) file.
+The `ketratermVersion` property in [gradle.properties](gradle.properties) independently
+pins the shared libraries. Development
 builds append `-SNAPSHOT`; setting environment variable `RELEASE=true` uses the
 exact version. For example, from this directory in a POSIX shell:
 
@@ -105,14 +107,34 @@ with `-PpluginPublishChannel=...`. Release notes come from the first section of
 ## Architecture
 
 See [Module.md](Module.md) for IDE services and assembly, and
-[repository architecture](../ARCHITECTURE.md) for shared module boundaries.
+[the library architecture](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/ARCHITECTURE.md)
+for shared module boundaries.
 
 <a id="local-source-wiring"></a>
 
-Local development uses a composite build; no Maven publication is required.
-See [build composition and dependencies](Module.md#dependencies-and-local-build).
+Normal builds resolve published libraries and do not need a KetraTerm checkout.
+For co-development, explicitly substitute a local library checkout with Gradle's
+`--include-build /path/to/KetraTerm` option. Keep that substitution local.
+See [dependencies and local builds](Module.md#dependencies-and-local-build).
 
 ## Documentation
 
 - [CHANGELOG.md](CHANGELOG.md): plugin release history.
 - [plugin.xml](src/main/resources/META-INF/plugin.xml): registrations and required IDE plugins.
+
+## CI and release ownership
+
+The Test Suite workflow runs formatting, tests, packaging, and the bundled-runtime
+check. The Release workflow runs on a pushed `v{version}` tag, verifies that the
+tag matches this repository's `VERSION`, runs Plugin Verifier against the
+configured target IDE, and attaches the installable ZIP to a GitHub release.
+
+Before tagging, bump the plugin `VERSION` and finalize the leading changelog
+section as `## [{version}] - YYYY-MM-DD`. Library upgrades are separate changes to
+`ketratermVersion` and require the same runtime and compatibility checks.
+
+GitHub releases do not automatically publish to JetBrains Marketplace. Set the
+repository variable `PUBLISH_TO_MARKETPLACE=true` and the Actions secret
+`PUBLISH_TOKEN` to enable Marketplace publishing after release verification.
+
+Remaining IDE verification work is tracked in the [plugin gap map](docs/feature-gap-map.md).

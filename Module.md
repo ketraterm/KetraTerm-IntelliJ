@@ -1,7 +1,7 @@
 # Module ketraterm-intellij-plugin
 
-An independent IntelliJ Platform product build that consumes local KetraTerm
-libraries through a composite. See the [README](README.md) for installation,
+An independent IntelliJ Platform product build that consumes published KetraTerm
+libraries. See the [README](README.md) for installation,
 requirements, and build commands; this file describes host assembly.
 
 ## Role
@@ -52,8 +52,8 @@ verification is still needed when changing platform or shared-library versions.
 
 The actual registrations are defined in
 [plugin.xml](src/main/resources/META-INF/plugin.xml). Terminal capability and gap
-status remain in the repository's canonical [feature map](../docs/terminal-feature-map.md)
-and [gap map](../docs/terminal-feature-gap-map.md).
+status follow the versioned [library feature map](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/docs/terminal-feature-map.md).
+IDE verification gaps are tracked in the [plugin gap map](docs/feature-gap-map.md).
 
 ## Dependencies and local build
 
@@ -61,11 +61,12 @@ The plugin consumes completion, completion-host, completion-persistence,
 ui-swing, ui-swing-host, and workspace. IntelliJ supplies the platform APIs and
 the bundled Git and Gradle integrations declared in `plugin.xml`.
 
-[settings.gradle.kts](settings.gradle.kts) includes the parent repository through
-`includeBuild("..")`. Dependencies in [build.gradle.kts](build.gradle.kts) use
-`io.github.ketraterm` coordinates with the repository-derived version; the
-composite substitutes local projects. No Maven publication is needed for local
-plugin development. Workspace and persistence are also published libraries.
+[settings.gradle.kts](settings.gradle.kts) resolves shared libraries from Maven
+Central. Dependencies in [build.gradle.kts](build.gradle.kts) use
+`io.github.ketraterm` coordinates and the independent `ketratermVersion` property.
+There is no parent-checkout dependency. Optional local source substitution uses
+Gradle's `--include-build` command-line option. IDE test connectors are owned by
+this repository's test sources; the library repository's testkit is not required.
 
 The plugin relies on IntelliJ's Kotlin and coroutine runtime, and its Pty4J/JNA
 native stack. The build excludes duplicate runtime artifacts from the plugin
