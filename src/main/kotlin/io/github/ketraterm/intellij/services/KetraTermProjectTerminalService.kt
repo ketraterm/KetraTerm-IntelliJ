@@ -393,10 +393,17 @@ class KetraTermProjectTerminalService internal constructor(
         failure?.let { throw it }
     }
 
-    private fun closeTabAfterRemoteSessionExit(tab: TerminalWorkspaceTab) {
-        if (disposed) return
+    private fun handleSessionClosed(tab: TerminalWorkspaceTab) {
+        if (disposed || closing) return
+        val pane = panesByTabId[tab.id]?.takeIf { it.tab === tab } ?: return
+        val event = (tab.session.state.value as? TerminalSessionState.Closed)?.event ?: return
+        if (event.locallyRequested) return
+        if (event.failure != null || event.exitCode != 0) {
+            pane.showExitStatus(event.exitCode, event.failure)
+            return
+        }
 
-        val pane = panesByTabId.remove(tab.id) ?: return
+        panesByTabId.remove(tab.id)
         val content = contentsByTabId.remove(tab.id)
         var failure = captureCleanupFailure(null) { removeCloseQueryListener(tab.id) }
         failure = captureCleanupFailure(failure) { requestWorkspaceTabClose(tab.id) }
@@ -504,7 +511,7 @@ class KetraTermProjectTerminalService internal constructor(
         if (pendingTab.content.isSelected && lastToolWindow?.isActive == true) pane.requestFocus()
         val sessionState = workspaceTab.session.state.value
         if (sessionState is TerminalSessionState.Closed && !sessionState.event.locallyRequested) {
-            closeTabAfterRemoteSessionExit(workspaceTab)
+            handleSessionClosed(workspaceTab)
         }
     }
 
@@ -609,7 +616,7 @@ class KetraTermProjectTerminalService internal constructor(
     }
 
     private fun confirmLiveProcessClose(tab: TerminalWorkspaceTab): Boolean {
-        if (!tab.session.shellIntegrationState.hasRunningCommand()) return true
+        if (tab.session.isClosed || !tab.session.shellIntegrationState.hasRunningCommand()) return true
         val answer =
             IntellijMessageDialogs.show(
                 project,
@@ -840,7 +847,7 @@ class KetraTermProjectTerminalService internal constructor(
             failure: Throwable?,
         ) {
             invokeLaterIfAlive {
-                closeTabAfterRemoteSessionExit(tab)
+                handleSessionClosed(tab)
             }
         }
     }

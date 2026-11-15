@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Retain failed-session output with an exit-status banner and Close button, including
+  transport failures and unknown exit statuses. Successful exits close normally.
+
 - Added opt-in inline completion previews in KetraTerm settings, independent of automatic popups.
   Right Arrow accepts the preview; Escape dismisses it. Inline text and popup alternatives
   share completion results, and browsing the popup hides the inline preview.

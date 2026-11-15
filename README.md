@@ -60,6 +60,11 @@ using current settings. They start fresh shell processes when shown; restoration
 does not recover prior processes or terminal contents. Automatic initial startup
 and restoration wait for IntelliJ project trust.
 
+Sessions ending with a nonzero exit status, a transport failure, or no exit status
+keep their terminal output and show an exit-status banner. Use its **Close** button
+or close the tab when finished. Successful exits close normally. Retained output
+is available for the current IDE session; tab restoration starts a fresh shell.
+
 Terminal-output clipboard reads ask for permission by default in new settings;
 clipboard writes and title changes are allowed by default. Saved permissions are
 preserved. These policies apply to the whole session, including output from SSH

@@ -61,6 +61,12 @@ internal class KetraTermTerminalPane private constructor(
     val clipboardReadPrompt: SwingClipboardReadPrompt,
 ) {
     private var closed = false
+    private val exitBanner = TerminalExitBanner(::closePane)
+
+    init {
+        component.add(exitBanner, BorderLayout.SOUTH)
+    }
+
     private var completionService: KetraTermCompletionService? = null
     private val completionChanged: () -> Unit = { reconcileCompletion() }
     private var shortcutController: KetraTermTerminalShortcutController? = null
@@ -78,6 +84,7 @@ internal class KetraTermTerminalPane private constructor(
     fun reloadSettings() {
         terminal.reloadSettings()
         component.background = terminal.background
+        exitBanner.refreshAppearance()
         searchBar.refreshColors(searchColors())
         terminal.setHostPolicy(KetraTermIntellijSettings.getInstance().createHostPolicy())
         reconcileCompletion()
@@ -214,7 +221,21 @@ internal class KetraTermTerminalPane private constructor(
     /**
      * Closes this pane through the owning IntelliJ content manager.
      */
-    fun closePane() = hostActions.closePane(tab)
+    fun closePane() {
+        if (!closed) hostActions.closePane(tab)
+    }
+
+    /** Shows the stopped session's status beside its retained terminal output. Call on the EDT. */
+    fun showExitStatus(
+        exitCode: Int?,
+        failure: Throwable?,
+    ) {
+        if (closed) return
+        clipboardReadPrompt.dismiss()
+        exitBanner.showExitStatus(exitCode, failure)
+        component.revalidate()
+        component.repaint()
+    }
 
     /**
      * Shows the IntelliJ-native context menu for this terminal pane.
