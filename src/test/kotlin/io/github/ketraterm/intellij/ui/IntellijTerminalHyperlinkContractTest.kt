@@ -30,12 +30,8 @@ import com.intellij.openapi.editor.markup.TextAttributes
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.openapi.vfs.VirtualFileManager
-import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent
-import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent
-import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
-import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.pom.Navigatable
 import com.intellij.psi.PsiDirectory
 import com.intellij.psi.PsiElement
@@ -66,7 +62,6 @@ class IntellijTerminalHyperlinkContractTest : BasePlatformTestCase() {
         assertNotNull(result)
         val item = result!!.resultItems.single()
         val presentation = intellijHyperlinkPresentation(item)
-        assertEquals(SwingHyperlinkActivation.DIRECT, intellijHyperlinkActivation(item))
         assertNotNull(presentation.normal)
         // A missing followed style makes the shared renderer retain the normal appearance after navigation.
         assertNull(presentation.followed)
@@ -85,15 +80,16 @@ class IntellijTerminalHyperlinkContractTest : BasePlatformTestCase() {
         assertNull(presentation.followed)
     }
 
-    fun testImplicitProviderLinksRetainSubtleHoverDecoration() {
-        val item = Filter.ResultItem(0, 4, HyperlinkInfo {}).also { it.isInvisibleLink = true }
-        val presentation = intellijImplicitHyperlinkPresentation()
-        assertEquals(intellijHyperlinkPresentation(item), presentation)
+    fun testImplicitPathLinksRetainSubtleHoverDecoration() {
+        val file = myFixture.addFileToProject("paths/source.kt", "source").virtualFile
+        val detector = IntellijTerminalHyperlinkDetector(project, Path.of(file.parent.path))
+        val link = detect(detector, request("source.kt\n", SwingHyperlinkDetectionContext.INDEPENDENT_LINE)).single()
+        val presentation = link.presentation
         assertFalse(presentation.isVisible)
         assertEquals(TerminalRenderUnderline.NONE, presentation.normal?.underlineStyle)
         assertEquals(TerminalRenderUnderline.SINGLE, presentation.hovered?.underlineStyle)
         assertEquals(1, presentation.hovered?.underlineThickness)
-        assertEquals(SwingHyperlinkActivation.MODIFIER, intellijHyperlinkActivation(item))
+        assertEquals(SwingHyperlinkActivation.MODIFIER, link.activation)
     }
 
     fun testImplicitThemeSnapshotsRemainImmutableAcrossThemeChanges() {
@@ -116,31 +112,56 @@ class IntellijTerminalHyperlinkContractTest : BasePlatformTestCase() {
 
     override fun createTempDirTestFixture(): TempDirTestFixture = TempDirTestFixtureImpl()
 
+    fun testProviderChangesInvalidateConfigurationOnlyWhileSubscribed() {
+        val detector = IntellijTerminalHyperlinkDetector(project)
+        val point = ConsoleFilterProvider.FILTER_PROVIDERS.point
+        val provider = ConsoleFilterProvider { emptyArray() }
+        runBlocking {
+            val subscription = launch(start = CoroutineStart.UNDISPATCHED) { detector.configurationChanges.collect {} }
+            val registration = Disposer.newDisposable()
+            try {
+                yield()
+                val original = detector.configurationGeneration
+                point.registerExtension(provider, registration)
+                assertEquals(original + 1, detector.configurationGeneration)
+                Disposer.dispose(registration)
+                assertEquals(original + 2, detector.configurationGeneration)
+            } finally {
+                Disposer.dispose(registration)
+                subscription.cancelAndJoin()
+            }
+            val cancelled = detector.configurationGeneration
+            val laterRegistration = Disposer.newDisposable()
+            try {
+                point.registerExtension(provider, laterRegistration)
+                assertEquals(cancelled, detector.configurationGeneration)
+            } finally {
+                Disposer.dispose(laterRegistration)
+            }
+            assertEquals(cancelled, detector.configurationGeneration)
+        }
+    }
+
     fun testFileContentUpdatesPreserveConfigurationAndStructuralUpdatesInvalidateIt() {
         val file = myFixture.addFileToProject("paths/source.kt", "source").virtualFile
         val detector = IntellijTerminalHyperlinkDetector(project)
-        val publisher = ApplicationManager.getApplication().messageBus.syncPublisher(VirtualFileManager.VFS_CHANGES)
-
-        fun publish(events: List<VFileEvent>) {
-            WriteAction.run<RuntimeException> { publisher.after(events) }
-        }
         runBlocking {
             val subscription = launch(start = CoroutineStart.UNDISPATCHED) { detector.configurationChanges.collect {} }
             try {
                 yield()
                 val original = detector.configurationGeneration
-                publish(emptyList())
-                publish(listOf(VFileContentChangeEvent(this, file, 0L, 1L)))
+                WriteAction.run<RuntimeException> { file.setBinaryContent("updated".toByteArray()) }
                 assertEquals(original, detector.configurationGeneration)
-                publish(listOf(VFileCreateEvent(this, file.parent, "created.kt", false, null, null, null)))
+                lateinit var created: VirtualFile
+                WriteAction.run<RuntimeException> { created = file.parent.createChildData(this, "created.kt") }
                 assertEquals(original + 1, detector.configurationGeneration)
-                publish(listOf(VFileDeleteEvent(this, file)))
+                WriteAction.run<RuntimeException> { created.delete(this) }
                 assertEquals(original + 2, detector.configurationGeneration)
             } finally {
                 subscription.cancelAndJoin()
             }
             val disposed = detector.configurationGeneration
-            publish(listOf(VFileDeleteEvent(this, file)))
+            WriteAction.run<RuntimeException> { file.delete(this) }
             assertEquals(disposed, detector.configurationGeneration)
         }
     }
@@ -479,31 +500,15 @@ class IntellijTerminalHyperlinkContractTest : BasePlatformTestCase() {
             }
         val normal = TextAttributes(Color.BLUE, Color.WHITE, Color.RED, EffectType.WAVE_UNDERSCORE, 0)
         val followed = TextAttributes(Color.MAGENTA, null, null, EffectType.LINE_UNDERSCORE, 0)
-        val hovered = TextAttributes(Color.GREEN, null, Color.YELLOW, EffectType.BOLD_DOTTED_LINE, 0)
-        val item = Filter.ResultItem(0, 4, info, normal, followed, hovered)
+        val item = Filter.ResultItem(0, 4, info, normal, followed)
         val style = intellijHyperlinkPresentation(item)
         assertEquals(Color.BLUE.rgb, style.normal?.foregroundArgb)
         assertEquals(Color.WHITE.rgb, style.normal?.backgroundArgb)
         assertEquals(TerminalRenderUnderline.CURLY, style.normal?.underlineStyle)
-        assertEquals(Color.GREEN.rgb, style.hovered?.foregroundArgb)
+        assertTrue(style.isVisible)
+        assertNull(style.hovered)
+        assertNull(style.active)
         assertEquals(Color.MAGENTA.rgb, style.followed?.foregroundArgb)
-        assertEquals(SwingHyperlinkActivation.DIRECT, intellijHyperlinkActivation(item))
-        item.isInvisibleLink = true
-        val implicit = intellijHyperlinkPresentation(item)
-        assertFalse(implicit.isVisible)
-        assertNull(implicit.normal?.foregroundArgb)
-        assertEquals(TerminalRenderUnderline.DOTTED, implicit.hovered?.underlineStyle)
-        assertEquals(Color.GREEN.rgb, implicit.hovered?.foregroundArgb)
-        assertEquals(
-            EditorColorsManager
-                .getInstance()
-                .globalScheme
-                .getAttributes(CodeInsightColors.HYPERLINK_ATTRIBUTES)
-                ?.foregroundColor
-                ?.rgb,
-            implicit.active?.foregroundArgb,
-        )
-        assertEquals(SwingHyperlinkActivation.MODIFIER, intellijHyperlinkActivation(item))
         val action = IntellijTerminalHyperlinkAction(project, info)
         val component = JPanel()
         action.mouseEntered(component, 10, 20, 40, 18)

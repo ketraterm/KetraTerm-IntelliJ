@@ -121,6 +121,22 @@
                 class="io.github.ketraterm.intellij.ui.KetraTermScrollPageDownAction">
             <keyboard-shortcut keymap="$default" first-keystroke="shift PAGE_DOWN"/>
         </action>
+        <action id="KetraTerm.Terminal.ScrollOldest" class="io.github.ketraterm.intellij.ui.KetraTermScrollOldestAction">
+            <keyboard-shortcut keymap="$default" first-keystroke="shift HOME"/>
+        </action>
+        <action id="KetraTerm.Terminal.ScrollLive" class="io.github.ketraterm.intellij.ui.KetraTermScrollLiveAction">
+            <keyboard-shortcut keymap="$default" first-keystroke="shift END"/>
+        </action>
+        <action id="KetraTerm.Terminal.PreviousCommand" class="io.github.ketraterm.intellij.ui.KetraTermPreviousCommandAction">
+            <keyboard-shortcut keymap="$default" first-keystroke="control alt UP"/>
+        </action>
+        <action id="KetraTerm.Terminal.NextCommand" class="io.github.ketraterm.intellij.ui.KetraTermNextCommandAction">
+            <keyboard-shortcut keymap="$default" first-keystroke="control alt DOWN"/>
+        </action>
+        <action id="KetraTerm.Terminal.CopyCommand" class="io.github.ketraterm.intellij.ui.KetraTermCopyCommandAction"/>
+        <action id="KetraTerm.Terminal.SelectCommandOutput" class="io.github.ketraterm.intellij.ui.KetraTermSelectCommandOutputAction"/>
+        <action id="KetraTerm.Terminal.CopyCommandOutput" class="io.github.ketraterm.intellij.ui.KetraTermCopyCommandOutputAction"/>
+        <action id="KetraTerm.Terminal.ExportCommandOutput" class="io.github.ketraterm.intellij.ui.KetraTermExportCommandOutputAction"/>
         <action id="KetraTerm.Search.NextMatch" class="io.github.ketraterm.intellij.ui.KetraTermNextSearchMatchAction">
             <keyboard-shortcut keymap="$default" first-keystroke="ENTER"/>
         </action>

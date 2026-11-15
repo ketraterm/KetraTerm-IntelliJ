@@ -17,11 +17,16 @@ package io.github.ketraterm.intellij.ui
 
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
+import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.PlatformCoreDataKeys
 import com.intellij.openapi.actionSystem.Separator
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.ControlFlowException
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileChooser.FileChooserFactory
+import com.intellij.openapi.fileChooser.FileSaverDescriptor
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -30,10 +35,15 @@ import com.intellij.ui.components.JBScrollBar
 import com.intellij.util.ui.UIUtil
 import io.github.ketraterm.intellij.KetraTermBundle
 import io.github.ketraterm.intellij.services.KetraTermCompletionService
+import io.github.ketraterm.intellij.services.KetraTermIntellijNotifier
 import io.github.ketraterm.intellij.services.captureCleanupFailure
 import io.github.ketraterm.intellij.settings.KetraTermIntellijSettings
+import io.github.ketraterm.protocol.NotificationLevel
+import io.github.ketraterm.render.api.TerminalRenderBufferKind
+import io.github.ketraterm.session.TerminalShellIntegrationCommandOutputRange
 import io.github.ketraterm.ui.swing.api.*
 import io.github.ketraterm.ui.swing.host.*
+import io.github.ketraterm.ui.swing.settings.SwingSettingsProvider
 import io.github.ketraterm.ui.swing.settings.TerminalClipboardHandler
 import io.github.ketraterm.ui.swing.suggestion.SwingShellSuggestionViewFactory
 import io.github.ketraterm.workspace.TerminalWorkspaceTab
@@ -61,6 +71,9 @@ internal class KetraTermTerminalPane private constructor(
     val clipboardReadPrompt: SwingClipboardReadPrompt,
 ) {
     private var closed = false
+    val isClosed: Boolean get() = closed
+    private val commandOutputRange = LongArray(TerminalShellIntegrationCommandOutputRange.REQUIRED_LONGS)
+    private val commandOutputExporter = CommandOutputExporter()
     private val exitBanner = TerminalExitBanner(::closePane)
     private val workingDirectory = TerminalWorkingDirectory { tab.currentWorkingDirectoryUri }
 
@@ -164,27 +177,60 @@ internal class KetraTermTerminalPane private constructor(
                 openSearch()
                 true
             }
-            SwingTerminalHostAction.SCROLL_PAGE_UP -> {
-                terminal.scrollViewportBy(
-                    terminal
-                        .visibleGridSize()
-                        .height
-                        .coerceAtLeast(1)
-                        .toDouble(),
-                )
-                true
-            }
-            SwingTerminalHostAction.SCROLL_PAGE_DOWN -> {
-                terminal.scrollViewportBy(
-                    -terminal
-                        .visibleGridSize()
-                        .height
-                        .coerceAtLeast(1)
-                        .toDouble(),
-                )
+            SwingTerminalHostAction.SCROLL_PAGE_UP,
+            SwingTerminalHostAction.SCROLL_PAGE_DOWN,
+            -> {
+                val page = (terminal.visibleGridSize().height - 1).coerceAtLeast(1).toDouble()
+                terminal.scrollViewportBy(if (action == SwingTerminalHostAction.SCROLL_PAGE_UP) page else -page)
                 true
             }
         }
+
+    /** Command capabilities use metadata only; action updates never extract terminal text. */
+    fun canNavigateCommands(): Boolean =
+        !closed &&
+            tab.session.shellIntegrationState.recordCount() > 0 &&
+            tab.session.readPublishedFrame { it.activeBuffer == TerminalRenderBufferKind.PRIMARY } == true
+
+    fun canUseCommandOutput(record: Int): Boolean =
+        canNavigateCommands() && tab.session.shellIntegrationState.copyCommandOutputRange(record, commandOutputRange)
+
+    fun exportCommandOutput(record: Int) {
+        if (!canUseCommandOutput(record)) return
+        commandOutputExporter.export(
+            chooseDestination = {
+                FileChooserFactory
+                    .getInstance()
+                    .createSaveFileDialog(
+                        FileSaverDescriptor(
+                            KetraTermBundle.message("terminal.export.title"),
+                            KetraTermBundle.message("terminal.export.description"),
+                            "txt",
+                        ),
+                        project,
+                    ).save(KetraTermBundle.message("terminal.export.defaultFileName"))
+                    ?.file
+                    ?.toPath()
+            },
+            readText = { terminal.commandOutputTextAsync(record) },
+            onUnavailable = {
+                KetraTermIntellijNotifier.showNotification(
+                    project,
+                    KetraTermBundle.message("terminal.export.title"),
+                    KetraTermBundle.message("terminal.export.unavailable"),
+                    NotificationLevel.INFO,
+                )
+            },
+            onFailure = { failure ->
+                KetraTermIntellijNotifier.showNotification(
+                    project,
+                    KetraTermBundle.message("terminal.export.error"),
+                    failure.localizedMessage ?: failure.javaClass.simpleName,
+                    NotificationLevel.ERROR,
+                )
+            },
+        )
+    }
 
     /**
      * Opens a new default terminal tab in this pane's tool window.
@@ -283,17 +329,35 @@ internal class KetraTermTerminalPane private constructor(
         group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.PASTE_CLIPBOARD)
         group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.SELECT_ALL)
         group.add(Separator.getInstance())
+        val commandRecord = terminal.commandRecordAt(request.x, request.y)
+        if (commandRecord != 0) {
+            group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.COPY_COMMAND)
+            group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.SELECT_COMMAND_OUTPUT)
+            group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.COPY_COMMAND_OUTPUT)
+            group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.EXPORT_COMMAND_OUTPUT)
+            group.add(Separator.getInstance())
+        }
         group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.CLEAR_SCREEN)
         group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.OPEN_TERMINAL_HERE)
         group.add(Separator.getInstance())
         group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.SCROLL_PAGE_UP)
         group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.SCROLL_PAGE_DOWN)
 
-        val popup =
-            actionManager
-                .createActionPopupMenu(KetraTermTerminalActionIds.CONTEXT_MENU_PLACE, group)
-                .component
-        KetraTermTerminalPopupContext.install(popup, this)
+        group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.SCROLL_OLDEST)
+        group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.SCROLL_LIVE)
+        group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.PREVIOUS_COMMAND)
+        group.addRegisteredAction(actionManager, KetraTermTerminalActionIds.NEXT_COMMAND)
+        val context =
+            SimpleDataContext
+                .builder()
+                .add(CommonDataKeys.PROJECT, project)
+                .add(PlatformCoreDataKeys.CONTEXT_COMPONENT, terminal)
+                .add(KetraTermTerminalData.PANE, this)
+                .add(KetraTermTerminalData.COMMAND_RECORD, commandRecord)
+                .build()
+        val actionPopup = actionManager.createActionPopupMenu(KetraTermTerminalActionIds.CONTEXT_MENU_PLACE, group)
+        actionPopup.setDataContext { context }
+        val popup = actionPopup.component
         popup.show(request.terminal, request.x, request.y)
         return true
     }
@@ -309,6 +373,7 @@ internal class KetraTermTerminalPane private constructor(
         val shortcuts = shortcutController
         shortcutController = null
         var failure: Throwable? = null
+        failure = captureCleanupFailure(failure, commandOutputExporter::close)
         failure = captureCleanupFailure(failure, workingDirectory::close)
         failure = captureCleanupFailure(failure, clipboardReadPrompt::close)
         failure = captureCleanupFailure(failure) { service?.releaseProvider(tab) }
@@ -367,6 +432,7 @@ internal class KetraTermTerminalPane private constructor(
             tab: TerminalWorkspaceTab,
             clipboard: TerminalClipboardHandler,
             hostActions: KetraTermTerminalPaneHostActions = KetraTermTerminalPaneHostActions.NONE,
+            settingsProvider: SwingSettingsProvider = SwingSettingsProvider { KetraTermIntellijSettings.getInstance().current() },
             onBound: (Throwable?) -> Unit = { failure -> if (failure != null) LOG.warn("Terminal binding failed", failure) },
         ): KetraTermTerminalPane {
             val scrollbar = JBScrollBar(Adjustable.VERTICAL)
@@ -376,7 +442,7 @@ internal class KetraTermTerminalPane private constructor(
             val terminal =
                 SwingTerminal(
                     settingsProvider = {
-                        KetraTermIntellijSettings.getInstance().current().copy { draft ->
+                        settingsProvider.currentSettings().copy { draft ->
                             draft.osc8HyperlinkPresentation = intellijOsc8HyperlinkPresentation()
                         }
                     },

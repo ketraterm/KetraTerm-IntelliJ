@@ -2,19 +2,21 @@
 
 ## [Unreleased]
 
-- Read clipboard text on workers with client-bound, ordered access. Queued operations
-  cancel when their terminal or IDE client closes, and obsolete reads cannot supply paste text.
-
-- Keep terminal creation, shell-profile menus, settings shell discovery, and local
-  directory validation responsive by performing filesystem work off the EDT.
-  Closing tabs or settings discards pending results.
-
-- Retain failed-session output with an exit-status banner and Close button, including
-  transport failures and unknown exit statuses. Successful exits close normally.
-
-- Added opt-in inline completion previews in KetraTerm settings, independent of automatic popups.
-  Right Arrow accepts the preview; Escape dismisses it. Inline text and popup alternatives
-  share completion results, and browsing the popup hides the inline preview.
+- Added shortcuts for paging through terminal history, jumping to the oldest or newest
+  output, and moving between commands. Customize them in the IDE's keymap settings.
+- Right-click a command to copy its text, select or copy its output, or save its output
+  to a text file.
+- Added optional suggestions directly at the prompt. Enable **Show inline suggestions**
+  in KetraTerm settings; Right Arrow accepts a suggestion and Escape dismisses it.
+  These suggestions work independently of automatic popups and hide while you browse
+  the suggestion popup.
+- Improved paste responsiveness and reliability. Closing a terminal cancels its pending
+  clipboard requests, and cancelled requests cannot paste outdated text.
+- Kept the IDE responsive while opening terminals, loading shell menus, and choosing
+  a shell or working directory in settings.
+- When a terminal ends with an error or stops unexpectedly, its output stays visible
+  with an explanation and a **Close** button.
+- Links recognized by IntelliJ appear in the IDE's link colors and open with a click.
 
 ## [0.5.0] - 2026-11-09
 

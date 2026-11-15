@@ -91,6 +91,10 @@ dependencies {
     }
     runtimeOnly("org.slf4j:slf4j-nop:2.0.18")
 
+    testImplementation("io.github.ketraterm:ketraterm-shell-integration:$ketratermVersion") {
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
+        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core-jvm")
+    }
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test) {
         // Test scheduling uses the IDE's coroutine runtime, just like the plugin.
@@ -165,10 +169,12 @@ intellijPlatform {
     }
 
     pluginVerification {
-        // Console-link visibility and hover metadata have no public SDK equivalents.
         failureLevel.set(
             listOf(
                 FailureLevel.COMPATIBILITY_PROBLEMS,
+                FailureLevel.DEPRECATED_API_USAGES,
+                FailureLevel.SCHEDULED_FOR_REMOVAL_API_USAGES,
+                FailureLevel.INTERNAL_API_USAGES,
                 FailureLevel.OVERRIDE_ONLY_API_USAGES,
             ),
         )

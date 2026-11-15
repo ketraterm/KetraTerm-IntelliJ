@@ -18,6 +18,7 @@ package io.github.ketraterm.intellij.ui
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.vfs.VirtualFile
@@ -26,10 +27,6 @@ import io.github.ketraterm.intellij.KetraTermBundle
 import io.github.ketraterm.intellij.services.KetraTermProjectTerminalService
 import io.github.ketraterm.ui.swing.host.SwingTerminalHostAction
 import java.awt.KeyboardFocusManager
-import javax.swing.JPopupMenu
-import javax.swing.SwingUtilities
-import javax.swing.event.PopupMenuEvent
-import javax.swing.event.PopupMenuListener
 
 internal object KetraTermTerminalActionIds {
     const val CONTEXT_MENU_PLACE = "KetraTerm.TerminalContextMenu"
@@ -45,6 +42,14 @@ internal object KetraTermTerminalActionIds {
     const val OPEN_TERMINAL_HERE = "KetraTerm.Terminal.OpenTerminalHere"
     const val SCROLL_PAGE_UP = "KetraTerm.Terminal.ScrollPageUp"
     const val SCROLL_PAGE_DOWN = "KetraTerm.Terminal.ScrollPageDown"
+    const val SCROLL_OLDEST = "KetraTerm.Terminal.ScrollOldest"
+    const val SCROLL_LIVE = "KetraTerm.Terminal.ScrollLive"
+    const val PREVIOUS_COMMAND = "KetraTerm.Terminal.PreviousCommand"
+    const val NEXT_COMMAND = "KetraTerm.Terminal.NextCommand"
+    const val COPY_COMMAND = "KetraTerm.Terminal.CopyCommand"
+    const val SELECT_COMMAND_OUTPUT = "KetraTerm.Terminal.SelectCommandOutput"
+    const val COPY_COMMAND_OUTPUT = "KetraTerm.Terminal.CopyCommandOutput"
+    const val EXPORT_COMMAND_OUTPUT = "KetraTerm.Terminal.ExportCommandOutput"
 }
 
 /**
@@ -57,7 +62,7 @@ internal object KetraTermTerminalActionIds {
  * @param terminalAction host-owned terminal pane action to perform.
  */
 abstract class KetraTermTerminalAction(
-    private val terminalAction: SwingTerminalHostAction,
+    internal val terminalAction: SwingTerminalHostAction,
 ) : DumbAwareAction() {
     /**
      * Performs this action against the focused KetraTerm pane.
@@ -233,7 +238,7 @@ internal fun terminalContextDirectory(file: VirtualFile?): VirtualFile? {
 internal abstract class KetraTermPaneLifecycleAction : DumbAwareAction() {
     override fun actionPerformed(event: AnActionEvent) {
         val pane = terminalPane(event) ?: return
-        if (!isEnabled(pane)) return
+        if (pane.isClosed || !isEnabled(pane)) return
         actionPerformed(pane, event)
     }
 
@@ -252,10 +257,8 @@ internal abstract class KetraTermPaneLifecycleAction : DumbAwareAction() {
     )
 }
 
-private fun terminalPane(event: AnActionEvent): KetraTermTerminalPane? {
-    if (event.isTerminalContextMenu()) {
-        KetraTermTerminalPopupContext.currentPane()?.let { return it }
-    }
+internal fun terminalPane(event: AnActionEvent): KetraTermTerminalPane? {
+    event.getData(KetraTermTerminalData.PANE)?.let { return it.takeUnless { pane -> pane.isClosed } }
     val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner ?: return null
     event.project
         ?.getServiceIfCreated(KetraTermProjectTerminalService::class.java)
@@ -269,36 +272,8 @@ private fun terminalPane(event: AnActionEvent): KetraTermTerminalPane? {
 
 private fun AnActionEvent.isTerminalContextMenu(): Boolean = place == KetraTermTerminalActionIds.CONTEXT_MENU_PLACE
 
-internal object KetraTermTerminalPopupContext {
-    private var pane: KetraTermTerminalPane? = null
-
-    fun currentPane(): KetraTermTerminalPane? = pane
-
-    fun install(
-        popup: JPopupMenu,
-        pane: KetraTermTerminalPane,
-    ) {
-        this.pane = pane
-        popup.addPopupMenuListener(
-            object : PopupMenuListener {
-                override fun popupMenuWillBecomeVisible(event: PopupMenuEvent) = Unit
-
-                override fun popupMenuWillBecomeInvisible(event: PopupMenuEvent) {
-                    SwingUtilities.invokeLater { clear(pane) }
-                    popup.removePopupMenuListener(this)
-                }
-
-                override fun popupMenuCanceled(event: PopupMenuEvent) {
-                    SwingUtilities.invokeLater { clear(pane) }
-                    popup.removePopupMenuListener(this)
-                }
-            },
-        )
-    }
-
-    private fun clear(expectedPane: KetraTermTerminalPane) {
-        if (pane === expectedPane) {
-            pane = null
-        }
-    }
+/** Immutable popup data keeps command actions bound to the pane and record that opened the menu. */
+internal object KetraTermTerminalData {
+    val PANE: DataKey<KetraTermTerminalPane> = DataKey.create("ketraterm.terminalPane")
+    val COMMAND_RECORD: DataKey<Int> = DataKey.create("ketraterm.commandRecord")
 }

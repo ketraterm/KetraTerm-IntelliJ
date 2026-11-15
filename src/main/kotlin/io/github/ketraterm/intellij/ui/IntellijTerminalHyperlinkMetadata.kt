@@ -28,24 +28,19 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.awt.RelativePoint
 import io.github.ketraterm.render.api.TerminalRenderUnderline
 import io.github.ketraterm.ui.swing.api.SwingHyperlinkAction
-import io.github.ketraterm.ui.swing.api.SwingHyperlinkActivation
 import io.github.ketraterm.ui.swing.api.SwingHyperlinkPresentation
 import io.github.ketraterm.ui.swing.api.SwingHyperlinkStyle
 import java.awt.Rectangle
 import java.awt.event.MouseEvent
 import javax.swing.JComponent
 
-/** All platform style resolution happens during discovery, outside Swing painting. */
+/** Public console styles are resolved during discovery, outside Swing painting. */
 internal fun intellijHyperlinkPresentation(item: Filter.ResultItem): SwingHyperlinkPresentation {
     val scheme = EditorColorsManager.getInstance().globalScheme
     val linkAttributes = scheme.getAttributes(CodeInsightColors.HYPERLINK_ATTRIBUTES)
-    if (item.isInvisibleLink) return intellijImplicitHyperlinkPresentation(scheme, item.hoveredHyperlinkAttributes)
     val normal = item.highlightAttributes ?: linkAttributes
-    val hovered = item.hoveredHyperlinkAttributes?.toSwingStyle()
     return SwingHyperlinkPresentation(
         normal = normal.toSwingStyle(),
-        hovered = hovered,
-        active = hovered,
         // The console's global followed style is a navigation marker, not a visited-URL style.
         followed = item.followedHyperlinkAttributes?.toSwingStyle(),
         isVisible = true,
@@ -66,13 +61,12 @@ internal fun intellijOsc8HyperlinkPresentation(
 /** Implicit discovered paths use the IDE's theme-resolved hover/modifier policy. */
 internal fun intellijImplicitHyperlinkPresentation(
     scheme: EditorColorsScheme = EditorColorsManager.getInstance().globalScheme,
-    hoveredAttributes: TextAttributes? = null,
 ): SwingHyperlinkPresentation {
     val resting = SwingHyperlinkStyle(underlineStyle = TerminalRenderUnderline.NONE)
     return SwingHyperlinkPresentation(
         normal = resting,
         hovered =
-            hoveredAttributes?.toSwingStyle() ?: SwingHyperlinkStyle(
+            SwingHyperlinkStyle(
                 underlineArgb = ColorUtil.withAlpha(scheme.defaultForeground, if (JBColor.isBright()) 0.4 else 0.5).rgb,
                 underlineStyle = TerminalRenderUnderline.SINGLE,
             ),
@@ -81,9 +75,6 @@ internal fun intellijImplicitHyperlinkPresentation(
         isVisible = false,
     )
 }
-
-internal fun intellijHyperlinkActivation(item: Filter.ResultItem): SwingHyperlinkActivation =
-    if (item.isInvisibleLink) SwingHyperlinkActivation.MODIFIER else SwingHyperlinkActivation.DIRECT
 
 private fun TextAttributes?.toSwingStyle(): SwingHyperlinkStyle =
     if (this == null) {

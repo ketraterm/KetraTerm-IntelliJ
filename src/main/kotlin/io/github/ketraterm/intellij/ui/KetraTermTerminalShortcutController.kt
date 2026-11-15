@@ -15,6 +15,9 @@
  */
 package io.github.ketraterm.intellij.ui
 
+import com.intellij.openapi.actionSystem.*
+import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.keymap.KeymapManager
 import io.github.ketraterm.intellij.settings.KetraTermIntellijSettings
 import io.github.ketraterm.ui.swing.host.SwingTerminalHostAction
@@ -67,35 +70,42 @@ internal class KetraTermTerminalShortcutController(
      */
     fun handleKeyPressed(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.VK_ESCAPE && pane.clipboardReadPrompt.dismiss()) return true
-        val action = activeKeymapActionFor(event.keyCode, event.modifiersEx) ?: return false
-        if (action == SwingTerminalHostAction.OPEN_SEARCH && !KetraTermIntellijSettings.getInstance().overrideIdeShortcuts()) {
-            return false
-        }
-        if (!pane.isTerminalActionEnabled(action)) return false
-        pane.performTerminalAction(action)
-        return true
-    }
-
-    private fun activeKeymapActionFor(
-        keyCode: Int,
-        modifiersEx: Int,
-    ): SwingTerminalHostAction? {
-        val normalizedModifiers = modifiersEx and RELEVANT_MODIFIERS
-        val keyStroke = KeyStroke.getKeyStroke(keyCode, normalizedModifiers)
-        val actionIds = KeymapManager.getInstance().activeKeymap.getActionIds(keyStroke)
-        for (actionId in actionIds) {
-            when (actionId) {
-                KetraTermTerminalActionIds.COPY_SELECTION -> return SwingTerminalHostAction.COPY_SELECTION
-                KetraTermTerminalActionIds.PASTE_CLIPBOARD -> return SwingTerminalHostAction.PASTE_CLIPBOARD
-                KetraTermTerminalActionIds.OPEN_SEARCH -> return SwingTerminalHostAction.OPEN_SEARCH
-                KetraTermTerminalActionIds.REQUEST_SUGGESTIONS -> return SwingTerminalHostAction.REQUEST_SUGGESTIONS
-                KetraTermTerminalActionIds.SELECT_ALL -> return SwingTerminalHostAction.SELECT_ALL
-                KetraTermTerminalActionIds.CLEAR_SCREEN -> return SwingTerminalHostAction.CLEAR_SCREEN
-                KetraTermTerminalActionIds.SCROLL_PAGE_UP -> return SwingTerminalHostAction.SCROLL_PAGE_UP
-                KetraTermTerminalActionIds.SCROLL_PAGE_DOWN -> return SwingTerminalHostAction.SCROLL_PAGE_DOWN
+        val keyStroke = KeyStroke.getKeyStroke(event.keyCode, event.modifiersEx and RELEVANT_MODIFIERS)
+        val keymap = KeymapManager.getInstance().activeKeymap
+        for (id in keymap.getActionIds(keyStroke)) {
+            // The IDE owns multi-stroke shortcuts; never execute one at its prefix.
+            if (keymap.getShortcuts(id).filterIsInstance<KeyboardShortcut>().none {
+                    it.firstKeyStroke == keyStroke && it.secondKeyStroke == null
+                }
+            ) {
+                continue
+            }
+            val action = ActionManager.getInstance().getAction(id) ?: continue
+            if (action is KetraTermTerminalAction) {
+                val terminalAction = action.terminalAction
+                if (terminalAction == SwingTerminalHostAction.OPEN_SEARCH &&
+                    !KetraTermIntellijSettings.getInstance().overrideIdeShortcuts()
+                ) {
+                    continue
+                }
+                if (!pane.isTerminalActionEnabled(terminalAction)) continue
+                return pane.performTerminalAction(terminalAction)
+            }
+            if (action !is KetraTermPaneLifecycleAction && action !is KetraTermCommandAction) continue
+            val context = SimpleDataContext.builder().add(KetraTermTerminalData.PANE, pane).build()
+            val actionEvent =
+                AnActionEvent.createEvent(
+                    context,
+                    action.templatePresentation.clone(),
+                    ActionPlaces.KEYBOARD_SHORTCUT,
+                    ActionUiKind.NONE,
+                    event,
+                )
+            if (ActionUtil.updateAction(action, actionEvent).isPerformed && actionEvent.presentation.isEnabled) {
+                return ActionUtil.performAction(action, actionEvent).isPerformed
             }
         }
-        return null
+        return false
     }
 
     private companion object {

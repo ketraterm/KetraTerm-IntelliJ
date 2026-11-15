@@ -103,7 +103,7 @@ internal class IntellijTerminalHyperlinkDetector(
                         override fun globalSchemeChange(scheme: EditorColorsScheme?) = changed()
                     },
                 )
-                ConsoleFilterProvider.FILTER_PROVIDERS.addChangeListener(this, Runnable { changed() })
+                ConsoleFilterProvider.FILTER_PROVIDERS.point.addChangeListener(this) { changed() }
                 awaitClose { Disposer.dispose(lifetime) }
             }
 
@@ -148,7 +148,7 @@ internal class IntellijTerminalHyperlinkDetector(
                             validation.endOffset,
                             text.substring(start, end),
                             intellijHyperlinkPresentation(item),
-                            intellijHyperlinkActivation(item),
+                            SwingHyperlinkActivation.DIRECT,
                         )
                     }
                 }
@@ -175,15 +175,14 @@ internal class IntellijTerminalHyperlinkDetector(
                         val file = LocalFileSystem.getInstance().findFileByNioFile(path) ?: return@readAction null
                         if (!file.isValid) return@readAction null
                         val info = OpenFileHyperlinkInfo(project, file, lineNumber, column)
-                        val item = Filter.ResultItem(start, end, info).also { it.isInvisibleLink = true }
                         request.hyperlink(
                             line,
                             start,
                             end,
                             IntellijTerminalHyperlinkAction(project, info),
                             uri = path.toUri().toASCIIString(),
-                            presentation = intellijHyperlinkPresentation(item),
-                            activation = intellijHyperlinkActivation(item),
+                            presentation = intellijImplicitHyperlinkPresentation(),
+                            activation = SwingHyperlinkActivation.MODIFIER,
                         )
                     }
                 if (result != null) results.add(result)
@@ -270,7 +269,7 @@ internal class IntellijTerminalHyperlinkDetector(
                                     SwingHyperlinkTextRange(checkNotNull(chain.start), consumed),
                                     IntellijTerminalHyperlinkAction(project, info),
                                     presentation = intellijHyperlinkPresentation(item),
-                                    activation = intellijHyperlinkActivation(item),
+                                    activation = SwingHyperlinkActivation.DIRECT,
                                     consumedThrough = consumed,
                                     providerOrder = order + 2,
                                 )
@@ -292,7 +291,7 @@ internal class IntellijTerminalHyperlinkDetector(
         val scope = GlobalSearchScope.allScope(project)
         val providers =
             try {
-                ConsoleFilterProvider.FILTER_PROVIDERS.getExtensionList(ApplicationManager.getApplication())
+                ConsoleFilterProvider.FILTER_PROVIDERS.extensionList
             } catch (_: IllegalArgumentException) {
                 emptyList()
             }

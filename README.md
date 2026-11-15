@@ -33,6 +33,16 @@ user home when no project path is available. The project JDK can be added to the
 shell environment through the corresponding setting. Shell choices load in the
 background without replacing a shell command you are editing.
 
+History paging with Shift+Page Up/Down keeps one row of context. Shift+Home
+shows the oldest retained output; Shift+End returns to live output. Ctrl+Alt+Up/Down
+reveals the previous/next shell command when shell integration is available.
+These shortcuts can be changed in the IDE keymap.
+
+Right-click a command to copy its text, select or copy its output, or export the
+retained output as UTF-8 text. Command-output actions can also be assigned shortcuts
+in the IDE keymap; those shortcuts use the latest shell command. An open context
+menu keeps the command you clicked as its target.
+
 Command-finished notifications are off by default. Enable them in KetraTerm settings
 and choose a minimum duration (10 seconds initially). Shell integration must report
 command completion; alerts appear only while that terminal pane has no keyboard
@@ -86,6 +96,9 @@ repository's Gradle wrapper. From this repository root:
 ./gradlew buildPlugin
 ./gradlew verifyPlugin
 ```
+
+`verifyPlugin` fails on deprecated, scheduled-for-removal, and internal API usages,
+as well as binary compatibility problems and override-only API misuse.
 
 On Windows, use `./gradlew.bat`. `runIde` starts an IDE sandbox with the plugin
 installed. `buildPlugin` writes the installable ZIP to `build/distributions/`.

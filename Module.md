@@ -18,6 +18,10 @@ The tool-window factory delegates tab ownership to
 tabs on a background thread, attaches panes on the EDT, and coordinates tab and
 project shutdown. Pane cleanup releases only its own listeners and UI adapters.
 Failed assembly rolls back resources while preserving the original failure.
++History and command actions delegate viewport and selection semantics to SwingTerminal.
++Popup data captures the originating pane and command record. Pane-owned exports choose
++their destination on the EDT, use asynchronous shared extraction, and stage file writes
++on workers; disposal cancels pending work and suppresses late notifications.
 Default launch profiles resolve on the startup worker. Shell menus and settings
 own cancellable background discovery; panes cache directory availability for
 action updates and revalidate it on the launch worker before opening a tab.
