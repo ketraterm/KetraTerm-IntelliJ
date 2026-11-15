@@ -27,6 +27,7 @@ import com.intellij.openapi.editor.colors.EditorColorsListener
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectCloseListener
+import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.wm.ToolWindow
@@ -49,6 +50,7 @@ import io.github.ketraterm.workspace.*
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.KeyboardFocusManager
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
@@ -77,6 +79,9 @@ class KetraTermProjectTerminalService internal constructor(
     private val commandAlertNotifier: (String, String, NotificationLevel) -> Unit = { title, body, level ->
         KetraTermIntellijNotifier.showNotification(project, title, body, level)
     },
+    private val defaultProfileFactory: (String?, KetraTermIntellijSettings.State, Path?) -> TerminalProfile =
+        { basePath, settings, directory -> KetraTermDefaultProfileFactory.defaultProfile(basePath, settings, directory) },
+    private val directoryResolver: (String?) -> Path? = IntellijWorkingDirectoryResolver::resolve,
     private val prepareStartup: (TerminalProfile) -> Unit,
 ) : Disposable {
     /** Creates the project owner using IntelliJ's bundled PTY runtime. */
@@ -233,8 +238,18 @@ class KetraTermProjectTerminalService internal constructor(
         initializeTabs(toolWindow)
         val settingsService = KetraTermIntellijSettings.getInstance()
         val settingsState = settingsService.state
-        val profile = KetraTermDefaultProfileFactory.defaultProfile(project, settingsState, workingDirectory)
-        return openTab(toolWindow, profile)
+        val basePath = project.guessProjectDir()?.path ?: project.basePath
+        return openTab(
+            toolWindow,
+            null,
+            initialState = TerminalTabState(workingDirectory = workingDirectory?.toString()),
+            profileFactory = {
+                if (workingDirectory != null) {
+                    require(Files.isDirectory(workingDirectory)) { "Working directory is unavailable" }
+                }
+                defaultProfileFactory(basePath, settingsState, workingDirectory)
+            },
+        )
     }
 
     /**
@@ -262,6 +277,8 @@ class KetraTermProjectTerminalService internal constructor(
         toolWindow: ToolWindow,
         profile: TerminalProfile?,
         restoredState: TerminalTabState? = null,
+        initialState: TerminalTabState = TerminalTabState(),
+        profileFactory: (() -> TerminalProfile)? = null,
     ): Content {
         val displayName =
             restoredState?.customTitle ?: profile?.displayName
@@ -285,10 +302,10 @@ class KetraTermProjectTerminalService internal constructor(
 
         val client = project.service<IntellijClipboardClient>()
         val applicationClient = service<IntellijClipboardClient>()
-        val pending = PendingTerminalTab(content, container, profile, restoredState, client, applicationClient)
+        val pending = PendingTerminalTab(content, container, profile, restoredState, client, applicationClient, profileFactory)
         pendingTabsById[pendingId] = pending
         content.putUserData(TAB_STATE) {
-            restoredState ?: TerminalTabRestore.snapshot(requireNotNull(profile), null, null)
+            restoredState ?: (pending.preparedProfile ?: profile)?.let { TerminalTabRestore.snapshot(it, null, null) } ?: initialState
         }
 
         val contentManager = toolWindow.contentManager
@@ -315,8 +332,9 @@ class KetraTermProjectTerminalService internal constructor(
                 profile = {
                     check(!disposed && !closing && !pending.closed) { "Terminal startup cancelled" }
                     val profile =
-                        pending.sourceProfile
+                        pending.profileFactory?.invoke() ?: pending.sourceProfile
                             ?: TerminalTabRestore.profile(basePath, requireNotNull(pending.restoredState), settingsState)
+                    check(!disposed && !closing && !pending.closed) { "Terminal startup cancelled" }
                     val launchProfile =
                         profile
                             .withProjectSdkEnvironment(project, enabled = settingsState.addProjectJdkToPath)
@@ -325,6 +343,7 @@ class KetraTermProjectTerminalService internal constructor(
                                     profile.startupCommand ?: TerminalStartupCommand.fromText(startupCommand),
                             )
                     prepareStartup(launchProfile)
+                    check(!disposed && !closing && !pending.closed) { "Terminal startup cancelled" }
                     pending.preparedProfile = profile
                     startingTab = pending
                     launchProfile
@@ -545,17 +564,23 @@ class KetraTermProjectTerminalService internal constructor(
     }
 
     private fun canOpenTerminalHere(tab: TerminalWorkspaceTab): Boolean =
-        lastToolWindow != null && IntellijWorkingDirectoryResolver.resolve(tab.currentWorkingDirectoryUri) != null
+        !disposed && !closing && lastToolWindow != null && panesByTabId[tab.id]?.tab === tab
 
     private fun openTerminalHere(
         tab: TerminalWorkspaceTab,
         sourceProfile: TerminalProfile,
     ): Boolean {
         val toolWindow = lastToolWindow ?: return false
-        val workingDirectory = IntellijWorkingDirectoryResolver.resolve(tab.currentWorkingDirectoryUri) ?: return false
+        if (!canOpenTerminalHere(tab)) return false
+        val uri = tab.currentWorkingDirectoryUri ?: return false
         openTab(
             toolWindow = toolWindow,
-            profile = sourceProfile.copy(workingDirectory = workingDirectory),
+            profile = sourceProfile,
+            profileFactory = {
+                val directory = directoryResolver(uri) ?: error("Working directory is unavailable")
+                check(tab.currentWorkingDirectoryUri == uri) { "Terminal working directory changed" }
+                sourceProfile.copy(workingDirectory = directory)
+            },
         )
         return true
     }
@@ -879,9 +904,12 @@ class KetraTermProjectTerminalService internal constructor(
         val restoredState: TerminalTabState?,
         val client: IntellijClipboardClient,
         val applicationClient: IntellijClipboardClient,
+        val profileFactory: (() -> TerminalProfile)?,
     ) {
         @Volatile
         var startedTab: TerminalWorkspaceTab? = null
+
+        @Volatile
         var preparedProfile: TerminalProfile? = null
         var startRequested = false
 

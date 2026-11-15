@@ -20,6 +20,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
+import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.testFramework.replaceService
 import com.intellij.testFramework.runInEdtAndWait
@@ -39,14 +40,17 @@ import kotlinx.coroutines.Dispatchers
 import java.awt.Component
 import java.awt.Container
 import java.lang.reflect.Proxy
+import java.nio.file.Path
 import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.FutureTask
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import javax.swing.JButton
 import javax.swing.JTextArea
+import javax.swing.SwingUtilities
 
 /** Real product tabs and sessions with ordered transport callbacks; no PTY or visible IDE window. */
 class KetraTermSessionExitTest : BasePlatformTestCase() {
@@ -184,12 +188,64 @@ class KetraTermSessionExitTest : BasePlatformTestCase() {
             }
         }
 
+    fun testOpenTerminalHereValidatesOnWorkerAndRejectsAChangedDirectory() {
+        for (changeDirectory in listOf(false, true)) {
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val directory = Path.of(System.getProperty("user.home"))
+            try {
+                withFixture(directoryResolver = {
+                    check(!SwingUtilities.isEventDispatchThread())
+                    assertEquals(directory.toUri().toString(), it)
+                    entered.countDown()
+                    check(release.await(10, TimeUnit.SECONDS))
+                    directory
+                }) { fixture ->
+                    val model = fixture.shellModels.remove()
+                    model.recordCurrentWorkingDirectory(directory.toUri().toString())
+                    val published = CompletableFuture<Unit>()
+                    val next =
+                        onEdt {
+                            PlatformTestUtil.waitWithEventsDispatching("Directory action did not become available", {
+                                fixture.pane.canOpenTerminalHere()
+                            }, 10)
+                            assertTrue(fixture.pane.openTerminalHere())
+                            fixture.manager.contents.single { it !== fixture.content }.also { content ->
+                                content.addPropertyChangeListener {
+                                    if (content.displayName.startsWith("Failed:")) published.complete(Unit)
+                                }
+                            }
+                        }
+                    check(entered.await(10, TimeUnit.SECONDS))
+                    onEdt {
+                        assertEquals(2, fixture.manager.contentCount)
+                        if (changeDirectory) model.recordCurrentWorkingDirectory(directory.resolve("changed").toUri().toString())
+                    }
+                    release.countDown()
+                    if (changeDirectory) {
+                        published.get(10, TimeUnit.SECONDS)
+                        assertTrue("Stale directory must not create a connector", fixture.connections.isEmpty())
+                    } else {
+                        fixture.awaitConnection()
+                        onEdt {
+                            val pane = next.component.components.firstNotNullOf { fixture.service.paneForComponent(it) }
+                            assertEquals(directory, pane.tab.profile.workingDirectory)
+                        }
+                    }
+                }
+            } finally {
+                release.countDown()
+            }
+        }
+    }
+
     private fun withFixture(
         closeFailure: Throwable? = null,
         exitDuringStart: Boolean = false,
+        directoryResolver: (String?) -> Path? = IntellijWorkingDirectoryResolver::resolve,
         test: (Fixture) -> Unit,
     ) {
-        val fixture = onEdt { Fixture(closeFailure, exitDuringStart) }
+        val fixture = onEdt { Fixture(closeFailure, exitDuringStart, directoryResolver) }
         try {
             fixture.connection = fixture.awaitConnection()
             onEdt {
@@ -206,9 +262,11 @@ class KetraTermSessionExitTest : BasePlatformTestCase() {
     private inner class Fixture(
         closeFailure: Throwable?,
         exitDuringStart: Boolean,
+        directoryResolver: (String?) -> Path?,
     ) {
         val lifetime: Disposable = Disposer.newDisposable(testRootDisposable, "session exit fixture")
         val connections = LinkedBlockingQueue<TerminalConnectorListener>()
+        val shellModels = LinkedBlockingQueue<TerminalShellIntegrationState>()
         val exits = LinkedBlockingQueue<() -> Unit>()
         val delivered = CompletableFuture<Unit>()
         val closeCount = AtomicInteger()
@@ -248,9 +306,10 @@ class KetraTermSessionExitTest : BasePlatformTestCase() {
                             }
                         workspace(listener) { options ->
                             val state =
-                                TerminalShellIntegrationState().apply {
-                                    recordCommandStart(1L, includeLine = true, commandText = "running at exit")
-                                }
+                                TerminalShellIntegrationState()
+                                    .apply {
+                                        recordCommandStart(1L, includeLine = true, commandText = "running at exit")
+                                    }.also(shellModels::add)
                             TerminalSession.create(
                                 TerminalBuffers.create(options.columns, options.rows, options.maxHistory),
                                 object : TerminalConnector {
@@ -282,6 +341,7 @@ class KetraTermSessionExitTest : BasePlatformTestCase() {
                             )
                         }
                     },
+                    directoryResolver = directoryResolver,
                     prepareStartup = {},
                 ).also { Disposer.register(lifetime, it) }
             val window =

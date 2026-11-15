@@ -62,6 +62,7 @@ internal class KetraTermTerminalPane private constructor(
 ) {
     private var closed = false
     private val exitBanner = TerminalExitBanner(::closePane)
+    private val workingDirectory = TerminalWorkingDirectory { tab.currentWorkingDirectoryUri }
 
     init {
         component.add(exitBanner, BorderLayout.SOUTH)
@@ -211,12 +212,12 @@ internal class KetraTermTerminalPane private constructor(
     /**
      * Returns whether "Open Terminal Here" can run for this pane.
      */
-    fun canOpenTerminalHere(): Boolean = hostActions.canOpenTerminalHere(tab)
+    fun canOpenTerminalHere(): Boolean = !closed && hostActions.canOpenTerminalHere(tab) && workingDirectory.isAvailable()
 
     /**
      * Opens a new terminal rooted at this pane's current local OSC 7 directory.
      */
-    fun openTerminalHere(): Boolean = hostActions.openTerminalHere(tab)
+    fun openTerminalHere(): Boolean = canOpenTerminalHere() && hostActions.openTerminalHere(tab)
 
     /**
      * Closes this pane through the owning IntelliJ content manager.
@@ -241,6 +242,7 @@ internal class KetraTermTerminalPane private constructor(
      * Shows the IntelliJ-native context menu for this terminal pane.
      */
     fun showContextMenu(request: SwingTerminalContextMenuRequest): Boolean {
+        workingDirectory.refresh()
         val actionManager = ActionManager.getInstance()
         val group = DefaultActionGroup()
         val hyperlink = request.hyperlink
@@ -307,6 +309,7 @@ internal class KetraTermTerminalPane private constructor(
         val shortcuts = shortcutController
         shortcutController = null
         var failure: Throwable? = null
+        failure = captureCleanupFailure(failure, workingDirectory::close)
         failure = captureCleanupFailure(failure, clipboardReadPrompt::close)
         failure = captureCleanupFailure(failure) { service?.releaseProvider(tab) }
         failure = captureCleanupFailure(failure) { service?.removeProviderListener(completionChanged) }

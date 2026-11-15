@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Keep terminal creation, shell-profile menus, settings shell discovery, and local
+  directory validation responsive by performing filesystem work off the EDT.
+  Closing tabs or settings discards pending results.
+
 - Retain failed-session output with an exit-status banner and Close button, including
   transport failures and unknown exit statuses. Successful exits close normally.
 

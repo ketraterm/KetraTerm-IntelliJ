@@ -27,10 +27,7 @@ import com.intellij.openapi.wm.ex.ToolWindowEx
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import io.github.ketraterm.intellij.KetraTermBundle
 import io.github.ketraterm.intellij.services.KetraTermProjectTerminalService
-import io.github.ketraterm.intellij.services.intellijTerminalProfileRegistry
-import io.github.ketraterm.intellij.settings.KetraTermIntellijProfileIcons
 import io.github.ketraterm.intellij.settings.KetraTermSettingsConfigurable
-import io.github.ketraterm.workspace.TerminalProfile
 
 /**
  * Creates the IntelliJ tool window that hosts KetraTerm terminal tabs.
@@ -57,7 +54,9 @@ class KetraTermToolWindowFactory :
         toolWindowEx.setTabActions(
             NewTerminalAction(project, toolWindow, terminalService),
             Separator.create(),
-            NewTerminalProfileGroup(project, toolWindow, terminalService),
+            KetraTermShellProfileGroup(toolWindow.disposable) { profile ->
+                if (!project.isDisposed) terminalService.openProfileTab(toolWindow, profile)
+            },
         )
         toolWindow.setAdditionalGearActions(TerminalGearActionsGroup(project))
     }
@@ -92,60 +91,6 @@ class KetraTermToolWindowFactory :
         ) {
         override fun actionPerformed(event: AnActionEvent) {
             terminalService.openDefaultTab(toolWindow)
-        }
-
-        override fun update(event: AnActionEvent) {
-            event.presentation.isEnabled = !project.isDisposed
-        }
-
-        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
-    }
-
-    private class NewTerminalProfileGroup(
-        private val project: Project,
-        private val toolWindow: ToolWindow,
-        private val terminalService: KetraTermProjectTerminalService,
-    ) : DefaultActionGroup(
-            "",
-            true,
-        ) {
-        private val profileIcons = KetraTermIntellijProfileIcons()
-        private val profileActions: Array<AnAction> =
-            intellijTerminalProfileRegistry()
-                .availableProfiles()
-                .map { profile ->
-                    OpenTerminalProfileAction(
-                        project = project,
-                        toolWindow = toolWindow,
-                        terminalService = terminalService,
-                        profile = profile,
-                        icon = profileIcons.icon(profile.kind),
-                    )
-                }.toTypedArray()
-
-        init {
-            templatePresentation.description = KetraTermBundle.message("action.ketraterm.newTerminalProfile.description")
-            templatePresentation.icon = AllIcons.General.ButtonDropTriangle
-        }
-
-        override fun getChildren(event: AnActionEvent?): Array<AnAction> = profileActions
-
-        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
-    }
-
-    private class OpenTerminalProfileAction(
-        private val project: Project,
-        private val toolWindow: ToolWindow,
-        private val terminalService: KetraTermProjectTerminalService,
-        private val profile: TerminalProfile,
-        icon: javax.swing.Icon,
-    ) : DumbAwareAction(
-            profile.displayName,
-            KetraTermBundle.message("action.ketraterm.openTerminalProfile.description", profile.displayName),
-            icon,
-        ) {
-        override fun actionPerformed(event: AnActionEvent) {
-            terminalService.openProfileTab(toolWindow, profile)
         }
 
         override fun update(event: AnActionEvent) {

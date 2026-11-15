@@ -22,14 +22,16 @@ open **Settings → Plugins → Install Plugin from Disk**, select the ZIP from
 `build/distributions/`, and restart when prompted.
 
 Open the **KetraTerm** tool window to create terminal tabs. The new-terminal menu
-also offers discovered shell profiles. **Open in KetraTerm** opens a terminal in
+also offers discovered shell profiles. Shell discovery runs in the background;
+the menu shows a loading entry until its choices are ready. **Open in KetraTerm** opens a terminal in
 a selected project directory or the directory containing a selected file.
 
 Configure **Settings → Tools → KetraTerm** for the shell path, launch directory,
 environment, typography, cursor, scrollback, input behavior, and terminal-output
 permissions. A blank launch directory uses the project root, falling back to the
 user home when no project path is available. The project JDK can be added to the
-shell environment through the corresponding setting.
+shell environment through the corresponding setting. Shell choices load in the
+background without replacing a shell command you are editing.
 
 Command-finished notifications are off by default. Enable them in KetraTerm settings
 and choose a minimum duration (10 seconds initially). Shell integration must report

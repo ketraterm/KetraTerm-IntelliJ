@@ -18,6 +18,9 @@ The tool-window factory delegates tab ownership to
 tabs on a background thread, attaches panes on the EDT, and coordinates tab and
 project shutdown. Pane cleanup releases only its own listeners and UI adapters.
 Failed assembly rolls back resources while preserving the original failure.
+Default launch profiles resolve on the startup worker. Shell menus and settings
+own cancellable background discovery; panes cache directory availability for
+action updates and revalidate it on the launch worker before opening a tab.
 
 Saved tabs contain profile identities, custom titles, and local working-directory
 metadata. Restoration resolves current profiles and settings, checks saved paths

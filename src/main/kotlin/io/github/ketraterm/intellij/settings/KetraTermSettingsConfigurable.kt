@@ -17,6 +17,10 @@ package io.github.ketraterm.intellij.settings
 
 import com.intellij.CommonBundle
 import com.intellij.ide.setToolTipText
+import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.SearchableConfigurable
@@ -36,8 +40,7 @@ import io.github.ketraterm.ui.swing.settings.SwingSettings
 import io.github.ketraterm.ui.swing.settings.TerminalTheme
 import io.github.ketraterm.workspace.TerminalCommandFinishedAlerts
 import io.github.ketraterm.workspace.TerminalProfile
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.DisposableHandle
+import kotlinx.coroutines.*
 import java.awt.Component
 import java.util.*
 import javax.swing.*
@@ -52,9 +55,13 @@ private const val KETRATERM_SETTINGS_CONFIGURABLE_ID = "io.github.ketraterm.term
  */
 class KetraTermSettingsConfigurable internal constructor(
     shellProfiles: List<TerminalProfile>,
+    private val discoverProfiles: (() -> List<TerminalProfile>)? = null,
+    private val profileDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val resetCompletionLearning: () -> Deferred<Unit> = { KetraTermCompletionService.getInstance().resetLearning() },
 ) : SearchableConfigurable {
-    constructor() : this(intellijTerminalProfileRegistry().availableProfiles())
+    constructor() : this(emptyList(), discoverProfiles = { intellijTerminalProfileRegistry().availableProfiles() })
+
+    private var profileScope: CoroutineScope? = null
 
     private val settings: KetraTermIntellijSettings
         get() = KetraTermIntellijSettings.getInstance()
@@ -343,7 +350,29 @@ class KetraTermSettingsConfigurable internal constructor(
         learningResetStatus.text = ""
         learningResetStatus.toolTipText = null
         reset()
+        loadShellProfiles(created)
         return created
+    }
+
+    private fun loadShellProfiles(owner: JComponent) {
+        profileScope?.cancel()
+        val discover = discoverProfiles ?: return
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.EDT + ModalityState.any().asContextElement())
+        profileScope = scope
+        scope.launch {
+            try {
+                val profiles = withContext(profileDispatcher) { discover() }
+                if (panel !== owner) return@launch
+                val edited = shellPathCombo.editor.item
+                shellPathCombo.model = DefaultComboBoxModel(profiles.map(::ShellPathOption).toTypedArray())
+                shellPathCombo.selectedItem = edited
+                shellPathCombo.editor.item = edited
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Logger.getInstance(KetraTermSettingsConfigurable::class.java).warn("Shell profile discovery failed", failure)
+            }
+        }
     }
 
     override fun isModified(): Boolean = KetraTermIntellijSettingsNormalizer.normalize(uiState()) != settings.state
@@ -357,6 +386,8 @@ class KetraTermSettingsConfigurable internal constructor(
     }
 
     override fun disposeUIResources() {
+        profileScope?.cancel()
+        profileScope = null
         learningResetObserver?.dispose()
         learningResetObserver = null
         panel = null
