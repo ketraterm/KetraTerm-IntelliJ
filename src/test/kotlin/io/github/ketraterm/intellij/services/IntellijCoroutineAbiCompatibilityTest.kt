@@ -15,30 +15,88 @@
  */
 package io.github.ketraterm.intellij.services
 
-import org.junit.Assert.assertFalse
+import kotlinx.coroutines.Job
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.nio.charset.StandardCharsets
+import java.lang.classfile.ClassFile
+import java.lang.classfile.Opcode
+import java.lang.classfile.instruction.InvokeInstruction
+import java.lang.invoke.MethodHandle
+import java.lang.invoke.MethodHandles
+import java.lang.invoke.MethodType
 
-/** Guards shared classes against coroutine cancellation bridges absent from IntelliJ's bundled runtime. */
+/** Checks cancellation bridge linkage against the IDE coroutine runtime on the test classpath. */
 class IntellijCoroutineAbiCompatibilityTest {
-    /** Ensures plugin-loaded shared classes call explicit cancellation overloads. */
     @Test
-    fun `shared classes avoid coroutine cancellation default bridges`() {
+    fun `shared cancellation bridges resolve against the IDE runtime`() {
         for (resource in PLUGIN_LOADED_SHARED_CLASSES) {
             val bytecode =
                 requireNotNull(javaClass.classLoader.getResourceAsStream(resource)) {
                     "Missing class resource: $resource"
                 }.use { it.readBytes() }
 
-            assertFalse(
-                "$resource must use an explicit cancellation overload",
-                String(bytecode, StandardCharsets.ISO_8859_1).contains(CANCEL_DEFAULT_BRIDGE),
+            for (method in ClassFile.of().parse(bytecode).methods()) {
+                val code = method.code().orElse(null) ?: continue
+                for (instruction in code) {
+                    if (instruction !is InvokeInstruction) continue
+                    val owner = instruction.owner().asInternalName()
+                    val name = instruction.name().stringValue()
+                    if (!owner.startsWith("kotlinx/coroutines/") || name != "cancel\$default") continue
+                    val descriptor = instruction.type().stringValue()
+                    val site = "$resource: ${method.methodName().stringValue()}${method.methodType().stringValue()}"
+                    assertTrue("$site must invoke $owner.$name$descriptor statically", instruction.opcode() == Opcode.INVOKESTATIC)
+                    try {
+                        cancellationBridge(owner, descriptor)
+                    } catch (failure: ReflectiveOperationException) {
+                        throw AssertionError("$site cannot link $owner.$name$descriptor against the IDE runtime", failure)
+                    } catch (failure: LinkageError) {
+                        throw AssertionError("$site cannot link $owner.$name$descriptor against the IDE runtime", failure)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `IDE default bridge cancels an active job`() {
+        val job = Job()
+        try {
+            assertTrue(job.isActive)
+            cancellationBridge(
+                "kotlinx/coroutines/Job\$DefaultImpls",
+                "(Lkotlinx/coroutines/Job;Ljava/util/concurrent/CancellationException;ILjava/lang/Object;)V",
+            ).invokeWithArguments(job, null, 1, null)
+            assertTrue(job.isCancelled)
+        } finally {
+            job.cancel(null)
+        }
+    }
+
+    @Test
+    fun `missing cancellation bridge overload is rejected`() {
+        assertThrows(NoSuchMethodException::class.java) {
+            cancellationBridge(
+                "kotlinx/coroutines/Job\$DefaultImpls",
+                "(Lkotlinx/coroutines/Job;Ljava/lang/String;ILjava/lang/Object;)V",
             )
         }
     }
 
+    private fun cancellationBridge(
+        owner: String,
+        descriptor: String,
+    ): MethodHandle {
+        val loader = Job::class.java.classLoader
+        val type = Class.forName(owner.replace('/', '.'), false, loader)
+        return MethodHandles.publicLookup().findStatic(
+            type,
+            "cancel\$default",
+            MethodType.fromMethodDescriptorString(descriptor, loader),
+        )
+    }
+
     private companion object {
-        private const val CANCEL_DEFAULT_BRIDGE = "cancel\$default"
         private val PLUGIN_LOADED_SHARED_CLASSES =
             arrayOf(
                 "io/github/ketraterm/session/TerminalSession.class",

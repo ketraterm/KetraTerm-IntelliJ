@@ -62,7 +62,8 @@ ui-swing, ui-swing-host, and workspace. IntelliJ supplies the platform APIs and
 the bundled Git and Gradle integrations declared in `plugin.xml`.
 
 [settings.gradle.kts](settings.gradle.kts) resolves shared libraries from Maven
-Central. Dependencies in [build.gradle.kts](build.gradle.kts) use
+Central and KetraTerm snapshots from Sonatype. Dependencies in
+[build.gradle.kts](build.gradle.kts) use
 `io.github.ketraterm` coordinates and the independent `ketratermVersion` property.
 There is no parent-checkout dependency. Optional local source substitution uses
 Gradle's `--include-build` command-line option. IDE test connectors are owned by
