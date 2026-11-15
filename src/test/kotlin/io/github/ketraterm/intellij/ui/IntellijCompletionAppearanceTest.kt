@@ -140,6 +140,11 @@ class IntellijCompletionAppearanceTest : BasePlatformTestCase() {
             )
         terminal.presentShellSuggestions(interaction)
         check(interaction.publish(suggestions(), selectedIndex = 1))
+        assertFalse(interaction.hasExplicitSelection)
+        assertEquals(-1, completionList(terminal).selectedIndex)
+        assertTrue(interaction.select(interaction.snapshot, 1))
+        assertTrue(interaction.hasExplicitSelection)
+        assertEquals(1, completionList(terminal).selectedIndex)
         terminal.doLayout()
         return interaction
     }

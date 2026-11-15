@@ -25,6 +25,7 @@ import io.github.ketraterm.ui.swing.suggestion.SwingShellSuggestionFeedback
 import io.github.ketraterm.ui.swing.suggestion.SwingShellSuggestionFeedbackKind
 import io.github.ketraterm.ui.swing.suggestion.SwingShellSuggestionRequest
 import io.github.ketraterm.ui.swing.suggestion.SwingShellSuggestionSource
+import io.github.ketraterm.ui.swing.suggestion.commandTextAfterReplacement
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
@@ -264,7 +265,7 @@ class IntellijCompletionRegistryTest {
         }
 
     @Test
-    fun `successful commands feed shared learning`() =
+    fun `two successful commands supply shared replay only in the same profile and directory`() =
         runBlocking {
             val registry =
                 IntellijCompletionRegistry(
@@ -272,34 +273,42 @@ class IntellijCompletionRegistryTest {
                     persistenceEnabled = false,
                     coroutineScope = this,
                 )
-            val first = registry.createProvider(context())
-            val second = registry.createProvider(context())
-            registry.recordFinishedCommand(
-                "bash",
-                TerminalShellIntegrationCommandMetadata(
-                    recordId = 1,
-                    commandText = "git switch main",
-                    lifecycle = TerminalShellIntegrationCommandLifecycle.SUCCEEDED,
-                    workingDirectoryUri = "file:///repo",
-                    exitCode = 0,
-                    startedAtEpochMillis = 1L,
-                    finishedAtEpochMillis = 2L,
-                ),
-            )
+            try {
+                val providers = listOf(registry.createProvider(context()), registry.createProvider(context()))
+                val request = request("git s")
+                for (provider in providers) {
+                    assertTrue(provider.suggestions(request).last().none { it.source == "learned" })
+                }
+                val command =
+                    TerminalShellIntegrationCommandMetadata(
+                        recordId = 1,
+                        commandText = "git switch main",
+                        lifecycle = TerminalShellIntegrationCommandLifecycle.SUCCEEDED,
+                        workingDirectoryUri = "file:///repo",
+                        exitCode = 0,
+                        startedAtEpochMillis = 1L,
+                        finishedAtEpochMillis = 2L,
+                    )
+                registry.recordFinishedCommand("bash", command)
+                for (provider in providers) {
+                    assertTrue(provider.suggestions(request).last().none { it.source == "learned" })
+                }
 
-            assertTrue(
-                first
-                    .suggestions(request("git s"))
-                    .last()
-                    .any { it.source == "learned" },
-            )
-            assertTrue(
-                second
-                    .suggestions(request("git s"))
-                    .last()
-                    .any { it.source == "learned" },
-            )
-            registry.closeAndFlush()
+                registry.recordFinishedCommand("bash", command.copy(recordId = 2, startedAtEpochMillis = 3L, finishedAtEpochMillis = 4L))
+                for (provider in providers) {
+                    val learned = provider.suggestions(request).last().filter { it.source == "learned" }
+                    assertEquals(listOf("git switch main"), learned.map { it.commandTextAfterReplacement(request) })
+                }
+                for (otherContext in listOf(
+                    context().copy(profileId = "other-shell"),
+                    context(workingDirectoryUriProvider = { "file:///other-repo" }),
+                )) {
+                    val suggestions = registry.createProvider(otherContext).suggestions(request).last()
+                    assertTrue(suggestions.none { it.source == "learned" })
+                }
+            } finally {
+                registry.closeAndFlush()
+            }
         }
 
     @Test

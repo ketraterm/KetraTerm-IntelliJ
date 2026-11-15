@@ -94,7 +94,7 @@ internal class KetraTermTerminalPane private constructor(
         if (closed) return
         val settings = KetraTermIntellijSettings.getInstance().state
         if (!settings.smartSuggestionsEnabled) {
-            terminal.setShellSuggestionProvider(null)
+            terminal.setSharedShellSuggestionProvider(null)
             completionService?.releaseProvider(tab)
             completionService?.removeProviderListener(completionChanged)
             completionService = null
@@ -105,7 +105,7 @@ internal class KetraTermTerminalPane private constructor(
                 completionService = it
                 it.addProviderListener(completionChanged)
             }
-        terminal.setShellSuggestionProvider(service.providerFor(project, tab))
+        terminal.setSharedShellSuggestionProvider(service.providerFor(project, tab))
     }
 
     /**
@@ -385,6 +385,7 @@ internal class KetraTermTerminalPane private constructor(
                                 }
                         },
                 ).apply {
+                    setInlineShellSuggestionKeymap(KetraTermShellSuggestionKeymap.INLINE)
                     setShellSuggestionFailureHandler { _, failure ->
                         reportShellSuggestionFailure(failure)
                     }

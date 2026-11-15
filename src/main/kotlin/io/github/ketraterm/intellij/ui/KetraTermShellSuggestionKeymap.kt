@@ -25,6 +25,13 @@ import javax.swing.KeyStroke
 
 /** Resolves shell-suggestion actions from IntelliJ's active user keymap. */
 internal object KetraTermShellSuggestionKeymap : SwingShellSuggestionKeymap {
+    /** Inline acceptance uses Right Arrow; dismissal also honors the IDE Escape action. */
+    val INLINE: SwingShellSuggestionKeymap =
+        SwingShellSuggestionKeymap { event ->
+            SwingShellSuggestionKeymap.INLINE_STANDARD.actionFor(event)
+                ?: actionFor(event)?.takeIf { it == SwingShellSuggestionAction.DISMISS }
+        }
+
     override fun actionFor(event: KeyEvent): SwingShellSuggestionAction? {
         SwingShellSuggestionKeymap.STANDARD.actionFor(event)?.let { return it }
         val modifiers = event.modifiersEx and RELEVANT_MODIFIERS

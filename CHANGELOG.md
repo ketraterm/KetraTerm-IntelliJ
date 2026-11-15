@@ -1,5 +1,11 @@
 # KetraTerm IntelliJ Plugin Changelog
 
+## [Unreleased]
+
+- Added opt-in inline completion previews in KetraTerm settings, independent of automatic popups.
+  Right Arrow accepts the preview; Escape dismisses it. Inline text and popup alternatives
+  share completion results, and browsing the popup hides the inline preview.
+
 ## [0.5.0] - 2026-11-09
 
 - Expanded experimental suggestions, enabled by default, with live PowerShell completion, Bash/zsh command discovery, bundled command specifications, local filesystem paths, and IDE project-file, Git, and Gradle sources. The shared popup follows the IDE theme, highlights matches, and shows argument hints. Settings control automatic popups, Enter acceptance, and optional saved learning with reset; shortcuts follow the IDE keymap. See the [completion guide](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/docs/features/completion.md) for supported behavior and limitations.

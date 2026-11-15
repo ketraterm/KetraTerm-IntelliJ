@@ -39,6 +39,11 @@ focus, and their text omits the command line.
 Completion is enabled by default and configurable in KetraTerm settings; see
 [completion availability](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/docs/features/completion.md#availability).
 The popup follows IDE colors and your configured terminal font.
+Enable **Show inline suggestions** in KetraTerm settings for completion previews
+inside the command line. Inline previews are off by default and work independently
+of automatic popups. Right Arrow accepts a visible preview; Escape dismisses it.
+Turning off **Enable suggestions** disables both presentations. Inline and popup
+results share one provider; browsing the popup suppresses the inline preview.
 Project-indexed file suggestions apply while the terminal is inside this project's
 content roots. After changing to another project, filesystem and shell completion
 follow the terminal's current directory without searching the original project's index.

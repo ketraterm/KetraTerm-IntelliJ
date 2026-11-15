@@ -39,6 +39,33 @@ import java.util.concurrent.CancellationException
  */
 class KetraTermIntellijSettingsTest {
     @Test
+    fun `inline previews default off in fresh and legacy settings and survive XML restart`() {
+        val service = KetraTermIntellijSettings()
+        assertFalse(service.state.inlineSuggestionsEnabled)
+        assertFalse(Element("State").deserialize(KetraTermIntellijSettings.State::class.java).inlineSuggestionsEnabled)
+        for (inline in listOf(false, true)) {
+            for (automaticPopup in listOf(false, true)) {
+                for (master in listOf(false, true)) {
+                    service.replaceState(
+                        service.state.copy(
+                            themeId = "nord",
+                            inlineSuggestionsEnabled = inline,
+                            shellSuggestionsEnabled = automaticPopup,
+                            smartSuggestionsEnabled = master,
+                        ),
+                    )
+                    val restored = KetraTermIntellijSettings()
+                    restored.loadState(requireNotNull(serialize(service.state)).deserialize(KetraTermIntellijSettings.State::class.java))
+                    assertEquals(service.state, restored.state)
+                    assertEquals(inline, restored.current().inlineShellSuggestionsEnabled)
+                    assertEquals(automaticPopup, restored.current().shellSuggestionsEnabled)
+                    assertEquals(master, restored.current().smartSuggestionsEnabled)
+                }
+            }
+        }
+    }
+
+    @Test
     fun `automatic suggestions follow stored preferences for every popup mode`() {
         val service = KetraTermIntellijSettings()
         for (mode in SwingShellSuggestionAutomaticMode.entries) {

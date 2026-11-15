@@ -128,16 +128,18 @@ class KetraTermSettingsConfigurable internal constructor(
     private val overrideIdeShortcutsCheckBox = JBCheckBox(KetraTermBundle.message("settings.ketraterm.overrideIdeShortcuts"))
 
     private val smartSuggestionsCheckBox = JBCheckBox(KetraTermBundle.message("settings.ketraterm.smartSuggestions"))
+    private val inlineSuggestionsCheckBox = JBCheckBox(KetraTermBundle.message("settings.ketraterm.inlineSuggestions"))
     private val shellSuggestionsCheckBox = JBCheckBox(KetraTermBundle.message("settings.ketraterm.shellSuggestions"))
     private val automaticSuggestionsAlways = JRadioButton(KetraTermBundle.message("settings.ketraterm.shellSuggestions.always"))
     private val automaticSuggestionsParameters = JRadioButton(KetraTermBundle.message("settings.ketraterm.shellSuggestions.parameters"))
 
     init {
-        smartSuggestionsCheckBox.addActionListener { updateAutomaticSuggestionModes() }
-        shellSuggestionsCheckBox.addActionListener { updateAutomaticSuggestionModes() }
+        smartSuggestionsCheckBox.addActionListener { updateSuggestionControls() }
+        shellSuggestionsCheckBox.addActionListener { updateSuggestionControls() }
     }
 
-    private fun updateAutomaticSuggestionModes() {
+    private fun updateSuggestionControls() {
+        inlineSuggestionsCheckBox.isEnabled = smartSuggestionsCheckBox.isSelected
         val enabled = smartSuggestionsCheckBox.isSelected && shellSuggestionsCheckBox.isSelected
         automaticSuggestionsAlways.isEnabled = enabled
         automaticSuggestionsParameters.isEnabled = enabled
@@ -282,6 +284,10 @@ class KetraTermSettingsConfigurable internal constructor(
                         cell(smartSuggestionsCheckBox)
                     }
                     row {
+                        cell(inlineSuggestionsCheckBox)
+                            .comment(KetraTermBundle.message("settings.ketraterm.inlineSuggestions.comment"))
+                    }
+                    row {
                         cell(shellSuggestionsCheckBox)
                             .comment(KetraTermBundle.message("settings.ketraterm.shellSuggestions.comment"))
                     }
@@ -424,10 +430,11 @@ class KetraTermSettingsConfigurable internal constructor(
         overrideIdeShortcutsCheckBox.isSelected = state.overrideIdeShortcuts
         smartSuggestionsCheckBox.isSelected = state.smartSuggestionsEnabled
         shellSuggestionsCheckBox.isSelected = state.shellSuggestionsEnabled
+        inlineSuggestionsCheckBox.isSelected = state.inlineSuggestionsEnabled
         val selectedMode =
             if (state.shellSuggestionAutomaticMode == "parameters_only") automaticSuggestionsParameters else automaticSuggestionsAlways
         selectedMode.isSelected = true
-        updateAutomaticSuggestionModes()
+        updateSuggestionControls()
         acceptSelectedSuggestionWithEnterCheckBox.isSelected = state.acceptSelectedSuggestionWithEnter
         completionLearningPersistenceCheckBox.isSelected = state.completionLearningPersistenceEnabled
         scrollOnOutputCheckBox.isSelected = state.scrollOnOutput
@@ -462,6 +469,7 @@ class KetraTermSettingsConfigurable internal constructor(
             overrideIdeShortcuts = overrideIdeShortcutsCheckBox.isSelected,
             smartSuggestionsEnabled = smartSuggestionsCheckBox.isSelected,
             shellSuggestionsEnabled = shellSuggestionsCheckBox.isSelected,
+            inlineSuggestionsEnabled = inlineSuggestionsCheckBox.isSelected,
             shellSuggestionAutomaticMode = if (automaticSuggestionsParameters.isSelected) "parameters_only" else "always",
             acceptSelectedSuggestionWithEnter = acceptSelectedSuggestionWithEnterCheckBox.isSelected,
             completionLearningPersistenceEnabled = completionLearningPersistenceCheckBox.isSelected,

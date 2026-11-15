@@ -210,6 +210,7 @@ class KetraTermIntellijSettings :
      * @property addProjectJdkToPath whether new terminals use the project JDK for `JAVA_HOME` and prepend its `bin` to `PATH`.
      * @property defaultTabName user-visible name for newly opened tabs.
      * @property smartSuggestionsEnabled master switch for completion resources and requests.
+     * @property inlineSuggestionsEnabled opt-in inline previews, independent of automatic popups and gated by [smartSuggestionsEnabled].
      * @property shellSuggestionAutomaticMode persisted automatic popup scope (`always` or `parameters_only`).
      * @property shellSuggestionsEnabled whether host-provided shell suggestions
      * may appear automatically. Explicit requests require only [smartSuggestionsEnabled].
@@ -271,6 +272,8 @@ class KetraTermIntellijSettings :
         @JvmField val smartSuggestionsEnabled: Boolean = DEFAULT_SMART_SUGGESTIONS_ENABLED,
         @OptionTag
         @JvmField val shellSuggestionsEnabled: Boolean = DEFAULT_SHELL_SUGGESTIONS_ENABLED,
+        @OptionTag
+        @JvmField val inlineSuggestionsEnabled: Boolean = false,
         @OptionTag
         @JvmField val shellSuggestionAutomaticMode: String = "always",
         @OptionTag
@@ -541,6 +544,7 @@ internal object KetraTermIntellijSettingsMapper {
             draft.lineHeight = state.lineHeight
             draft.smartSuggestionsEnabled = state.smartSuggestionsEnabled
             draft.shellSuggestionsEnabled = state.shellSuggestionsEnabled
+            draft.inlineShellSuggestionsEnabled = state.inlineSuggestionsEnabled
             draft.shellSuggestionAutomaticMode =
                 SwingShellSuggestionAutomaticMode.entries.first {
                     it.name.equals(state.shellSuggestionAutomaticMode, ignoreCase = true)

@@ -26,6 +26,31 @@ import java.awt.event.KeyEvent
 
 class KetraTermShellSuggestionKeymapTest {
     @Test
+    fun `inline acceptance uses Right while popup acceptance keys remain unclaimed`() {
+        val source = Canvas()
+
+        fun inline(
+            key: Int,
+            modifiers: Int = 0,
+        ) = KetraTermShellSuggestionKeymap.INLINE.actionFor(
+            KeyEvent(source, KeyEvent.KEY_PRESSED, 0L, modifiers, key, KeyEvent.CHAR_UNDEFINED),
+        )
+        assertEquals(SwingShellSuggestionAction.ACCEPT_SELECTED, inline(KeyEvent.VK_RIGHT))
+        assertEquals(SwingShellSuggestionAction.DISMISS, inline(KeyEvent.VK_ESCAPE))
+        for (key in listOf(KeyEvent.VK_TAB, KeyEvent.VK_ENTER, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT)) {
+            assertNull(inline(key))
+        }
+        for (modifier in listOf(
+            InputEvent.CTRL_DOWN_MASK,
+            InputEvent.SHIFT_DOWN_MASK,
+            InputEvent.ALT_DOWN_MASK,
+            InputEvent.META_DOWN_MASK,
+        )) {
+            assertNull(inline(KeyEvent.VK_RIGHT, modifier))
+        }
+    }
+
+    @Test
     fun `lookup navigation follows IntelliJ actions`() {
         assertEquals(
             SwingShellSuggestionAction.SELECT_NEXT,
@@ -66,7 +91,7 @@ class KetraTermShellSuggestionKeymapTest {
     }
 
     @Test
-    fun `enter accepts only a selected popup item while tab retains select or accept semantics`() {
+    fun `enter and tab require deliberate popup selection`() {
         val source = Canvas()
 
         assertEquals(
@@ -76,7 +101,7 @@ class KetraTermShellSuggestionKeymapTest {
             ),
         )
         assertEquals(
-            SwingShellSuggestionAction.ACCEPT,
+            SwingShellSuggestionAction.ACCEPT_SELECTED,
             KetraTermShellSuggestionKeymap.actionFor(
                 KeyEvent(source, KeyEvent.KEY_PRESSED, 0L, 0, KeyEvent.VK_TAB, KeyEvent.CHAR_UNDEFINED),
             ),

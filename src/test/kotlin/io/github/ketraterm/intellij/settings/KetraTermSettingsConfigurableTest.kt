@@ -40,6 +40,57 @@ import javax.swing.JComboBox
 import javax.swing.JLabel
 
 class KetraTermSettingsConfigurableTest : BasePlatformTestCase() {
+    fun testInlinePreferenceAppliesResetsAndRemainsIndependentOfAutomaticPopups() {
+        val settings = KetraTermIntellijSettings.getInstance()
+        val original = settings.state
+        val configurable = KetraTermSettingsConfigurable(emptyList())
+        try {
+            settings.replaceState(
+                original.copy(smartSuggestionsEnabled = true, shellSuggestionsEnabled = false, inlineSuggestionsEnabled = false),
+            )
+            val component = configurable.createComponent()
+
+            fun button(key: String) =
+                descendants(component).filterIsInstance<AbstractButton>().single {
+                    it.text == KetraTermBundle.message(key)
+                }
+            val inline = button("settings.ketraterm.inlineSuggestions")
+            val automatic = button("settings.ketraterm.shellSuggestions")
+            val master = button("settings.ketraterm.smartSuggestions")
+            assertTrue(inline.isEnabled)
+            assertFalse(inline.isSelected)
+            assertFalse(configurable.isModified)
+            inline.doClick()
+            assertTrue(configurable.isModified)
+            configurable.reset()
+            assertFalse(inline.isSelected)
+            assertFalse(configurable.isModified)
+            inline.doClick()
+            configurable.apply()
+            assertTrue(settings.state.inlineSuggestionsEnabled)
+            assertFalse(settings.state.shellSuggestionsEnabled)
+            assertTrue(settings.current().inlineShellSuggestionsEnabled)
+            automatic.doClick()
+            automatic.doClick()
+            assertTrue(inline.isEnabled)
+            assertTrue(inline.isSelected)
+            master.doClick()
+            assertFalse(inline.isEnabled)
+            assertTrue(inline.isSelected)
+            configurable.apply()
+            configurable.reset()
+            assertFalse(inline.isEnabled)
+            assertTrue(inline.isSelected)
+            assertFalse(configurable.isModified)
+            master.doClick()
+            assertTrue(inline.isEnabled)
+            assertTrue(inline.isSelected)
+        } finally {
+            configurable.disposeUIResources()
+            settings.replaceState(original)
+        }
+    }
+
     fun testAutomaticPopupModePersistsAndFollowsEnablement() {
         val settings = KetraTermIntellijSettings.getInstance()
         val original = settings.state
