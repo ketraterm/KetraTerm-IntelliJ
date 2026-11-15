@@ -31,7 +31,11 @@ Application settings publish normalized state and notify every registered
 listener after publication. Open panes reload reusable Swing settings and the
 session host policy. Clipboard operations retain their owning IDE client context;
 reads wait for pane readiness, stay within the session deadline, and are retired
-when either owner closes.
+when either owner closes. Application-client owners serialize asynchronous clipboard
+access across panes. Reads and transfer decoding run on workers; IDE writes commit
+on the EDT to preserve clipboard history and synchronous listener behavior. Each
+binding cancels its queued work on disposal and revalidates both client owners
+before access and before returning a result.
 
 The application completion service creates providers for individual workspace
 tabs, owns shared learning, and delegates evaluation, filesystem access, and

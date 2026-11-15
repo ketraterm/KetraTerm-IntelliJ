@@ -117,7 +117,7 @@ class IntellijClipboardSessionTest : BasePlatformTestCase() {
             f.binding.postIfAlive {
                 try {
                     if (IntellijMessageDialogs.show(project, SwingClipboardPrompts.writeConfirmation("Terminal", "new")) == 0) {
-                        f.binding.clipboard.copyText("new")
+                        f.binding.clipboard.copyTextAsync("new")
                     }
                     finished.complete(Unit)
                 } catch (failure: Throwable) {
@@ -341,8 +341,22 @@ class IntellijClipboardSessionTest : BasePlatformTestCase() {
         val clipboard = IntellijTerminalClipboardHandler(owner.owner)
         clipboard.copyText("public-api-text")
         assertEquals("public-api-text", CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor))
+        val copied = CompletableDeferred<Unit>()
+        val notified = CompletableDeferred<Unit>()
+        CopyPasteManager.getInstance().addContentChangedListener({ _, _ ->
+            assertTrue(SwingUtilities.isEventDispatchThread())
+            assertEquals(owner.id, ClientId.current)
+            notified.complete(Unit)
+        }, lifetime)
+        owner.owner.coroutineScope.launch(Dispatchers.IO) {
+            clipboard.copyTextAsync("async-public-api-text")
+            copied.complete(Unit)
+        }
+        await("asynchronous IDE clipboard copy", copied)
+        assertTrue(notified.isCompleted)
+        assertEquals("async-public-api-text", CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor))
         runBlocking(Dispatchers.IO + owner.id.asContextElement()) {
-            assertEquals("public-api-text", clipboard.readText())
+            assertEquals("async-public-api-text", clipboard.readText())
             assertNull(clipboard.readPrimarySelectionText())
         }
         Disposer.dispose(owner.owner)
@@ -425,13 +439,57 @@ class IntellijClipboardSessionTest : BasePlatformTestCase() {
         assertFalse(client.written.isCompleted)
     }
 
+    fun testDeniedWireReadsAndWritesNeverReachClipboard() {
+        val client = Client("denied", "original")
+        val f = Fixture(client, TerminalClipboardPermission.DENY, writePermission = TerminalClipboardPermission.DENY)
+        f.attach()
+        f.connector.feedFromHost("\u001b]52;c;bmV3\u0007\u001b]52;c;?\u0007".toByteArray())
+        await("denied clipboard response", f.completed)
+        assertEquals(TerminalClipboardReadOutcome.DENIED, runBlocking { f.completed.await() })
+        assertEquals("\u001b]52;c;\u001b\\", f.output())
+        assertEquals("original", client.text)
+        assertEquals(0, client.reads.get())
+        assertFalse(client.written.isCompleted)
+        assertFalse(f.promptVisible)
+    }
+
+    fun testRevocationDuringBlockedReadCannotBeUndoneByLaterPermissionRestoration() {
+        val client = Client("revoked", "secret")
+        val entered = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        client.onRead = {
+            entered.complete(Unit)
+            check(release.await(10, TimeUnit.SECONDS)) { "Native clipboard read was not released" }
+            "late-secret"
+        }
+        val f = Fixture(client, reader = SwingClipboardReader(Dispatchers.IO))
+        f.attach()
+        f.query()
+        try {
+            await("native clipboard read", entered)
+            val policy = HostPolicy(clipboardPolicy = TerminalClipboardPolicy(readPermission = TerminalClipboardPermission.ALLOW))
+            f.session.setHostPolicy(
+                policy.copy(clipboardPolicy = policy.clipboardPolicy.copy(readPermission = TerminalClipboardPermission.DENY)),
+            )
+            f.session.setHostPolicy(policy)
+        } finally {
+            release.countDown()
+        }
+        await("revoked read completion", f.completed)
+        await("revoked provider cleanup", f.providerDone)
+        assertEquals(TerminalClipboardReadOutcome.CANCELLED, runBlocking { f.completed.await() })
+        assertEquals("", f.output())
+    }
+
     private inner class Fixture(
         val client: Client,
         permission: TerminalClipboardPermission = TerminalClipboardPermission.ALLOW,
         reader: SwingClipboardReader = SwingClipboardReader(dispatcher),
         applicationClient: Client = client,
-        clipboard: TerminalClipboardHandler = applicationClient.clipboard,
+        clipboard: TerminalClipboardHandler =
+            IntellijTerminalClipboardHandler(applicationClient.owner, client.owner, clipboard = applicationClient.clipboard),
         consent: SwingClipboardReadPrompt? = null,
+        writePermission: TerminalClipboardPermission = TerminalClipboardPermission.ALLOW,
     ) {
         val connector = MockConnector()
         val entered = CompletableDeferred<Unit>()
@@ -453,7 +511,7 @@ class IntellijClipboardSessionTest : BasePlatformTestCase() {
                     HostPolicy(
                         clipboardPolicy =
                             TerminalClipboardPolicy(
-                                writePermission = TerminalClipboardPermission.ALLOW,
+                                writePermission = writePermission,
                                 readPermission = permission,
                             ),
                     ),

@@ -22,6 +22,7 @@ import com.intellij.openapi.project.Project
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * Clipboard lifetime for one IDE client connection.
@@ -46,6 +47,9 @@ internal class IntellijClipboardClient internal constructor(
         ClientId.current,
         { project.getServiceIfCreated(IntellijClipboardClient::class.java) },
     )
+
+    // Application owners serialize native access across all of their terminal adapters.
+    internal val clipboardAccess = Mutex()
 
     @Volatile private var disposed = false
 

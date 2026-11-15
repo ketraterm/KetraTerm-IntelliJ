@@ -72,7 +72,7 @@ clipboard writes and title changes are allowed by default. Saved permissions are
 preserved. These policies apply to the whole session, including output from SSH
 commands. Ordinary copy and paste remain user actions. Clipboard requests are
 bound to the owning IDE client and terminal, and pending reads expire or cancel
-when their session or owner closes.
+when their session or owner closes. Clipboard text reads run in the background.
 
 ## Build
 

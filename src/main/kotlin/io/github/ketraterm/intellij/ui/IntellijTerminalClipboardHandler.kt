@@ -15,45 +15,91 @@
  */
 package io.github.ketraterm.intellij.ui
 
+import com.intellij.codeWithMe.asContextElement
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.ide.CopyPasteManager
 import io.github.ketraterm.intellij.services.IntellijClipboardClient
 import io.github.ketraterm.ui.swing.settings.TerminalClipboardHandler
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
+import kotlin.coroutines.CoroutineContext
 
 /**
- * IntelliJ-backed clipboard service for the reusable Swing terminal.
- *
- * This adapter keeps IDE clipboard ownership inside the plugin host. Reusable
- * terminal modules continue to depend only on [TerminalClipboardHandler].
+ * Clipboard access under the captured IDE client, serialized across that client's terminals.
+ * Reads and transfer decoding run on workers. IDE writes stay on the EDT because setContents
+ * mutates clipboard history and synchronously calls IDE listeners. Cancellation discards queued
+ * access and late reads; a write already committed to the IDE clipboard cannot be undone.
  */
 internal class IntellijTerminalClipboardHandler(
     private val client: IntellijClipboardClient,
+    private val projectClient: IntellijClipboardClient = client,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val clipboard: TerminalClipboardHandler = IdeClipboard,
 ) : TerminalClipboardHandler {
-    // The nullable Java getter and non-null setter do not form a writable Kotlin property.
+    @Suppress("ObsoleteDispatchersEdt")
+    private val writeContext = Dispatchers.EDT + ModalityState.any().asContextElement()
+
+    override fun copyText(text: String): Unit = checked { clipboard.copyText(text) }
+
+    override fun readText(): String? = checked(clipboard::readText)
+
+    override fun readPrimarySelectionText(): String? = checked(clipboard::readPrimarySelectionText)
+
+    override suspend fun copyTextAsync(text: String): Unit = access(writeContext) { clipboard.copyText(text) }
+
+    override suspend fun readTextAsync(): String? = access(ioDispatcher, clipboard::readText)
+
+    override suspend fun readPrimarySelectionTextAsync(): String? = access(ioDispatcher, clipboard::readPrimarySelectionText)
+
+    private suspend fun <T> access(
+        context: CoroutineContext,
+        action: () -> T,
+    ): T =
+        withContext(client.clientId.asContextElement()) {
+            checkOwners()
+            // Reserve before dispatch. Cancellation cannot release this slot until a blocked
+            // native operation returns, so a following write cannot overtake it.
+            val result = client.clipboardAccess.withLock { withContext(context) { checked(action) } }
+            checkOwners()
+            result
+        }
+
+    private inline fun <T> checked(action: () -> T): T {
+        checkOwners()
+        val result = action()
+        checkOwners()
+        return result
+    }
+
+    private fun checkOwners() {
+        client.checkCurrent()
+        if (projectClient !== client) projectClient.checkCurrent()
+    }
+}
+
+/** The public IDE facade preserves client routing, clipboard history, and primary selection. */
+private object IdeClipboard : TerminalClipboardHandler {
     @Suppress("UsePropertyAccessSyntax")
     override fun copyText(text: String) {
-        client.checkCurrent()
+        ApplicationManager.getApplication().assertIsDispatchThread()
         CopyPasteManager.getInstance().setContents(StringSelection(text))
     }
 
-    override fun readText(): String? {
-        client.checkCurrent()
-        val text = CopyPasteManager.getInstance().getContents<String>(DataFlavor.stringFlavor)
-        client.checkCurrent()
-        return text
-    }
+    override fun readText(): String? = CopyPasteManager.getInstance().getContents(DataFlavor.stringFlavor)
 
     override fun readPrimarySelectionText(): String? {
-        client.checkCurrent()
         val contents = CopyPasteManager.getInstance().systemSelectionContents
-        val text =
-            if (contents?.isDataFlavorSupported(DataFlavor.stringFlavor) == true) {
-                contents.getTransferData(DataFlavor.stringFlavor) as? String
-            } else {
-                null
-            }
-        client.checkCurrent()
-        return text
+        return if (contents?.isDataFlavorSupported(DataFlavor.stringFlavor) == true) {
+            contents.getTransferData(DataFlavor.stringFlavor) as? String
+        } else {
+            null
+        }
     }
 }

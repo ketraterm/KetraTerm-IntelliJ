@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Read clipboard text on workers with client-bound, ordered access. Queued operations
+  cancel when their terminal or IDE client closes, and obsolete reads cannot supply paste text.
+
 - Keep terminal creation, shell-profile menus, settings shell discovery, and local
   directory validation responsive by performing filesystem work off the EDT.
   Closing tabs or settings discards pending results.

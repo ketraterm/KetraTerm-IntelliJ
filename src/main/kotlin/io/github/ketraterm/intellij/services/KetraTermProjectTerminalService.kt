@@ -852,7 +852,7 @@ class KetraTermProjectTerminalService internal constructor(
                         SwingClipboardPrompts.writeConfirmation(tab.profile.displayName, event.text, messages = IntellijSwingHostMessages),
                     ) == 0
                 if (allowed && binding.isAlive) {
-                    binding.clipboard.copyText(event.text)
+                    binding.clipboard.copyTextAsync(event.text)
                 }
             }
         }
