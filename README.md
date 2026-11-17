@@ -51,6 +51,8 @@ focus, and their text omits the command line.
 Completion is enabled by default and configurable in KetraTerm settings; see
 [completion availability](https://github.com/ketraterm/KetraTerm/blob/v1.0.0/docs/features/completion.md#availability).
 The popup follows IDE colors and your configured terminal font.
+The suggestion shortcut (Ctrl+Space by default) is consumed only when a shell
+suggestion interaction can start.
 Enable **Show inline suggestions** in KetraTerm settings for completion previews
 inside the command line. Inline previews are off by default and work independently
 of automatic popups. Right Arrow accepts a visible preview; Escape dismisses it.
