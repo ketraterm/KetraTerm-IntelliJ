@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Updated the terminal libraries to the stable KetraTerm 1.0.0 release.
+- Invalid saved clipboard or title permissions now deny access and identify the
+  affected setting in the IDE log.
 - Added shortcuts for paging through terminal history, jumping to the oldest or newest
   output, and moving between commands. Customize them in the IDE's keymap settings.
 - Right-click a command to copy its text, select or copy its output, or save its output

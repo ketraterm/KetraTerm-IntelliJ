@@ -18,10 +18,10 @@ The tool-window factory delegates tab ownership to
 tabs on a background thread, attaches panes on the EDT, and coordinates tab and
 project shutdown. Pane cleanup releases only its own listeners and UI adapters.
 Failed assembly rolls back resources while preserving the original failure.
-+History and command actions delegate viewport and selection semantics to SwingTerminal.
-+Popup data captures the originating pane and command record. Pane-owned exports choose
-+their destination on the EDT, use asynchronous shared extraction, and stage file writes
-+on workers; disposal cancels pending work and suppresses late notifications.
+History and command actions delegate viewport and selection semantics to SwingTerminal.
+Popup data captures the originating pane and command record. Pane-owned exports choose
+their destination on the EDT, use asynchronous shared extraction, and stage file writes
+on workers; disposal cancels pending work and suppresses late notifications.
 Default launch profiles resolve on the startup worker. Shell menus and settings
 own cancellable background discovery; panes cache directory availability for
 action updates and revalidate it on the launch worker before opening a tab.
@@ -63,7 +63,7 @@ verification is still needed when changing platform or shared-library versions.
 
 The actual registrations are defined in
 [plugin.xml](src/main/resources/META-INF/plugin.xml). Terminal capability and gap
-status follow the versioned [library feature map](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/docs/terminal-feature-map.md).
+status follow the versioned [library feature map](https://github.com/ketraterm/KetraTerm/blob/v1.0.0/docs/terminal-feature-map.md).
 IDE verification gaps are tracked in the [plugin gap map](docs/feature-gap-map.md).
 
 ## Dependencies and local build

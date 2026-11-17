@@ -49,7 +49,7 @@ command completion; alerts appear only while that terminal pane has no keyboard
 focus, and their text omits the command line.
 
 Completion is enabled by default and configurable in KetraTerm settings; see
-[completion availability](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/docs/features/completion.md#availability).
+[completion availability](https://github.com/ketraterm/KetraTerm/blob/v1.0.0/docs/features/completion.md#availability).
 The popup follows IDE colors and your configured terminal font.
 Enable **Show inline suggestions** in KetraTerm settings for completion previews
 inside the command line. Inline previews are off by default and work independently
@@ -65,7 +65,7 @@ name by its parent directories.
 The **Project** settings page accepts a single startup command. The command is
 submitted once after shell readiness, including in restored tabs; typing before
 readiness cancels it. Shell support and readiness behavior follow the shared
-[workspace startup contract](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/ketraterm-workspace/README.md).
+[workspace startup contract](https://github.com/ketraterm/KetraTerm/blob/v1.0.0/ketraterm-workspace/README.md).
 
 Tabs restore their names, shell-profile identities, and local working directories
 using current settings. They start fresh shell processes when shown; restoration
@@ -78,8 +78,10 @@ or close the tab when finished. Successful exits close normally. Retained output
 is available for the current IDE session; tab restoration starts a fresh shell.
 
 Terminal-output clipboard reads ask for permission by default in new settings;
-clipboard writes and title changes are allowed by default. Saved permissions are
-preserved. These policies apply to the whole session, including output from SSH
+clipboard writes and title changes are allowed by default. Valid saved permissions
+are preserved. Malformed saved permissions become Deny; the IDE log identifies
+the affected field in `ketraterm.xml`. These policies apply to the whole session,
+including output from SSH
 commands. Ordinary copy and paste remain user actions. Clipboard requests are
 bound to the owning IDE client and terminal, and pending reads expire or cancel
 when their session or owner closes. Clipboard text reads run in the background.
@@ -132,7 +134,7 @@ with `-PpluginPublishChannel=...`. Release notes come from the first section of
 ## Architecture
 
 See [Module.md](Module.md) for IDE services and assembly, and
-[the library architecture](https://github.com/ketraterm/KetraTerm/blob/v0.5.0/ARCHITECTURE.md)
+[the library architecture](https://github.com/ketraterm/KetraTerm/blob/v1.0.0/ARCHITECTURE.md)
 for shared module boundaries.
 
 <a id="local-source-wiring"></a>

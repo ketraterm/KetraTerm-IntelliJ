@@ -599,12 +599,12 @@ class KetraTermSettingsConfigurableTest : BasePlatformTestCase() {
         }
     }
 
-    fun testRemovedClipboardModeFallsBackAndSettingsOfferOnlySupportedChoices() {
+    fun testInvalidSavedPermissionsRemainDeniedThroughUnrelatedApplyAndAllowExplicitChanges() {
         val settings = KetraTermIntellijSettings.getInstance()
         val original = settings.state
         val configurable = KetraTermSettingsConfigurable()
         try {
-            settings.loadState(original.copy(clipboardWrite = "allowlist", clipboardRead = "allowlist"))
+            settings.loadState(original.copy(clipboardWrite = "allowlist", clipboardRead = "allowlist", titlePermission = "unknown"))
             val component = configurable.createComponent()
             assertFalse(configurable.isModified())
             val expectedLabels = listOf("Deny", "Ask", "Allow")
@@ -617,20 +617,28 @@ class KetraTermSettingsConfigurableTest : BasePlatformTestCase() {
             for (combo in permissionCombos) {
                 assertEquals(expectedLabels, (0 until combo.itemCount).map { combo.getItemAt(it).toString() })
             }
-            assertEquals("Allow", permissionCombos[0].selectedItem?.toString())
+            assertEquals("Deny", permissionCombos[0].selectedItem?.toString())
             assertEquals("Deny", permissionCombos[1].selectedItem?.toString())
+            val titlePermission =
+                descendants(component)
+                    .filterIsInstance<AbstractButton>()
+                    .single { it.text == KetraTermBundle.message("settings.ketraterm.titlePermission") }
+            assertFalse(titlePermission.isSelected)
             descendants(component)
                 .filterIsInstance<AbstractButton>()
                 .first { it.text == KetraTermBundle.message("settings.ketraterm.visualBell") }
                 .apply { isSelected = !isSelected }
             configurable.apply()
-            assertEquals("allow", settings.state.clipboardWrite)
+            assertEquals("deny", settings.state.clipboardWrite)
             assertEquals("deny", settings.state.clipboardRead)
-            assertEquals(TerminalClipboardPermission.ALLOW, settings.createHostPolicy().clipboardPolicy.writePermission)
+            assertEquals(TerminalClipboardPermission.DENY, settings.createHostPolicy().clipboardPolicy.writePermission)
+            assertEquals("deny", settings.state.titlePermission)
 
             permissionCombos[0].selectedIndex = 1
+            titlePermission.isSelected = true
             configurable.apply()
             assertEquals("prompt", settings.state.clipboardWrite)
+            assertEquals("allow", settings.state.titlePermission)
             assertEquals("deny", settings.state.clipboardRead)
             permissionCombos[0].selectedIndex = 0
             configurable.reset()

@@ -16,6 +16,7 @@
 package io.github.ketraterm.intellij.settings
 
 import com.intellij.openapi.components.*
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.UIUtil
@@ -373,6 +374,7 @@ class KetraTermIntellijSettings :
 internal object KetraTermIntellijSettingsNormalizer {
     /**
      * Returns a state with validated bounds and canonical identifiers.
+     * Invalid permissions become Deny and identify their XML field in the IDE log.
      *
      * @param state persisted or UI-produced state.
      * @return normalized state safe to persist.
@@ -415,27 +417,15 @@ internal object KetraTermIntellijSettingsNormalizer {
             environmentVariables = normalizeEnvironmentText(state.environmentVariables),
             defaultTabName = state.defaultTabName.trim().ifBlank { KetraTermBundle.message("terminal.tab.defaultName") },
             pasteSanitization = normalizePasteSanitization(state.pasteSanitization),
-            clipboardWrite =
-                normalizeClipboardPermission(
-                    state.clipboardWrite,
-                    KetraTermIntellijSettings.DEFAULT_CLIPBOARD_WRITE,
-                ),
-            clipboardRead =
-                normalizeClipboardPermission(
-                    state.clipboardRead,
-                    TerminalClipboardPermission.DENY,
-                ),
+            clipboardWrite = normalizeClipboardPermission(state.clipboardWrite, "clipboardWrite"),
+            clipboardRead = normalizeClipboardPermission(state.clipboardRead, "clipboardRead"),
             clipboardMaxDecodedBytes = state.clipboardMaxDecodedBytes.coerceAtLeast(0),
             commandFinishedAlertThresholdSeconds =
                 state.commandFinishedAlertThresholdSeconds.coerceIn(
                     TerminalCommandFinishedAlerts.MINIMUM_DURATION_SECONDS,
                     TerminalCommandFinishedAlerts.MAXIMUM_DURATION_SECONDS,
                 ),
-            titlePermission =
-                normalizeTitlePermission(
-                    state.titlePermission,
-                    KetraTermIntellijSettings.DEFAULT_TITLE_PERMISSION,
-                ),
+            titlePermission = normalizeTitlePermission(state.titlePermission),
         )
 
     /**
@@ -482,21 +472,25 @@ internal object KetraTermIntellijSettingsNormalizer {
 
     private fun normalizeClipboardPermission(
         perm: String,
-        default: TerminalClipboardPermission,
+        setting: String,
     ): String =
         when (val normalized = perm.trim().lowercase(Locale.ROOT)) {
             "allow", "prompt", "deny" -> normalized
-            else -> default.name.lowercase(Locale.ROOT)
+            else -> denyInvalidPermission(setting)
         }
 
-    private fun normalizeTitlePermission(
-        perm: String,
-        default: TerminalTitlePermission,
-    ): String =
+    private fun normalizeTitlePermission(perm: String): String =
         when (val normalized = perm.trim().lowercase(Locale.ROOT)) {
             "allow", "deny" -> normalized
-            else -> default.name.lowercase(Locale.ROOT)
+            else -> denyInvalidPermission("titlePermission")
         }
+
+    private fun denyInvalidPermission(setting: String): String {
+        Logger
+            .getInstance(KetraTermIntellijSettingsNormalizer::class.java)
+            .warn("Invalid KetraTerm permission '$setting' in ketraterm.xml; using Deny")
+        return "deny"
+    }
 
     private fun normalizePasteSanitization(policy: String): String =
         when (policy.trim().lowercase(Locale.ROOT)) {
