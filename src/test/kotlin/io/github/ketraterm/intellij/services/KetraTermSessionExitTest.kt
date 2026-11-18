@@ -176,17 +176,25 @@ class KetraTermSessionExitTest : BasePlatformTestCase() {
             }
         }
 
-    fun testLocalCloseRetiresThePaneWithoutShowingAFailureBanner() =
-        withFixture { fixture ->
-            fixture.pane.tab.session
-                .close()
-            onEdt {
-                assertFalse(fixture.closeButton().parent.isVisible)
-                fixture.manager.removeContent(fixture.content, true)
-                assertFalse(fixture.service.hasOpenTabs())
-                assertNull(fixture.service.paneForComponent(fixture.pane.terminal))
+    fun testLocalCloseRetiresThePaneWithoutShowingAFailureBanner() {
+        val finishStartup = CountDownLatch(1)
+        withFixture(afterConnectorStarts = { check(finishStartup.await(10, TimeUnit.SECONDS)) }) { fixture ->
+            try {
+                fixture.pane.tab.session
+                    .close()
+                onEdt {
+                    assertFalse(fixture.closeButton().parent.isVisible)
+                    fixture.manager.removeContent(fixture.content, true)
+                    assertEquals(0, fixture.manager.contentCount)
+                    assertFalse(fixture.service.hasOpenTabs())
+                    assertNull(fixture.service.paneForComponent(fixture.pane.terminal))
+                    assertEquals(1, fixture.closeCount.get())
+                }
+            } finally {
+                finishStartup.countDown()
             }
         }
+    }
 
     fun testOpenTerminalHereValidatesOnWorkerAndRejectsAChangedDirectory() {
         for (changeDirectory in listOf(false, true)) {
@@ -243,9 +251,10 @@ class KetraTermSessionExitTest : BasePlatformTestCase() {
         closeFailure: Throwable? = null,
         exitDuringStart: Boolean = false,
         directoryResolver: (String?) -> Path? = IntellijWorkingDirectoryResolver::resolve,
+        afterConnectorStarts: () -> Unit = {},
         test: (Fixture) -> Unit,
     ) {
-        val fixture = onEdt { Fixture(closeFailure, exitDuringStart, directoryResolver) }
+        val fixture = onEdt { Fixture(closeFailure, exitDuringStart, directoryResolver, afterConnectorStarts) }
         try {
             fixture.connection = fixture.awaitConnection()
             onEdt {
@@ -263,6 +272,7 @@ class KetraTermSessionExitTest : BasePlatformTestCase() {
         closeFailure: Throwable?,
         exitDuringStart: Boolean,
         directoryResolver: (String?) -> Path?,
+        afterConnectorStarts: () -> Unit,
     ) {
         val lifetime: Disposable = Disposer.newDisposable(testRootDisposable, "session exit fixture")
         val connections = LinkedBlockingQueue<TerminalConnectorListener>()
@@ -318,6 +328,7 @@ class KetraTermSessionExitTest : BasePlatformTestCase() {
                                         listener.onBytes(bytes, 0, bytes.size)
                                         if (exitDuringStart) listener.onClosed(9)
                                         connections.add(listener)
+                                        afterConnectorStarts()
                                     }
 
                                     override fun resize(

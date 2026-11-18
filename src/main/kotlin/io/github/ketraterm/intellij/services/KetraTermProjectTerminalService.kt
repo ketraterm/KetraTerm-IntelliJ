@@ -399,13 +399,16 @@ class KetraTermProjectTerminalService internal constructor(
         failure?.let { throw it }
     }
 
-    private fun closeTabFromContent(tabId: String) {
+    private fun closeTabFromContent(
+        tabId: String,
+        startupPending: Boolean = false,
+    ) {
         if (disposed) return
 
         val pane = panesByTabId.remove(tabId)
         val content = contentsByTabId.remove(tabId)
         var failure = captureCleanupFailure(null) { removeCloseQueryListener(tabId) }
-        if (pane != null || content != null) {
+        if (startupPending || pane != null || content != null) {
             failure = captureCleanupFailure(failure) { requestWorkspaceTabClose(tabId) }
             failure = captureCleanupFailure(failure) { pane?.close() }
         }
@@ -438,7 +441,7 @@ class KetraTermProjectTerminalService internal constructor(
     private fun closePendingTab(pendingId: String) {
         pendingTabsById.remove(pendingId)?.let { pending ->
             pending.closed = true
-            pending.startedTab?.let { requestWorkspaceTabClose(it.id) }
+            pending.startedTab?.let { closeTabFromContent(it.id, startupPending = true) }
         }
     }
 
