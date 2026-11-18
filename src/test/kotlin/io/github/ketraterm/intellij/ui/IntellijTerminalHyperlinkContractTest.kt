@@ -246,6 +246,32 @@ class IntellijTerminalHyperlinkContractTest : BasePlatformTestCase() {
         assertEquals(java.awt.Point(15, 27), anchor?.point)
     }
 
+    fun testOrderedProviderKeepsPromptDirectoryPlainAsCommandGrows() {
+        val directory = myFixture.addFileToProject("cwd/example/file.txt", "").virtualFile.parent
+        val path = Path.of(directory.path).toString()
+        val provider =
+            ConsoleFilterProvider {
+                arrayOf(
+                    object : Filter, DumbAware {
+                        override fun applyFilter(
+                            line: String,
+                            entireLength: Int,
+                        ): Filter.Result {
+                            val start = entireLength - line.length + line.indexOf(path)
+                            return Filter.Result(start, start + path.length, OpenFileHyperlinkInfo(project, directory, 0))
+                        }
+                    },
+                )
+            }
+        ExtensionTestUtil.maskExtensions(ConsoleFilterProvider.FILTER_PROVIDERS, listOf(provider), testRootDisposable)
+        for (command in listOf("", "c", "cat")) {
+            val link = detect(IntellijTerminalHyperlinkDetector(project), request("PS $path> $command\n")).single()
+            assertFalse(link.presentation.isVisible)
+            assertNull(link.presentation.normal?.foregroundArgb)
+            assertEquals(SwingHyperlinkActivation.MODIFIER, link.activation)
+        }
+    }
+
     fun testMalformedFileCoordinatesDoNotSilentlyNavigateToTheWrongLine() {
         val file = myFixture.addFileToProject("paths/source.kt", "line").virtualFile
         val detector = IntellijTerminalHyperlinkDetector(project, Path.of(file.parent.path))

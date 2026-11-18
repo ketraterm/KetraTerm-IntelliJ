@@ -141,10 +141,8 @@ for shared module boundaries.
 
 <a id="local-source-wiring"></a>
 
-Normal builds resolve published libraries and do not need a KetraTerm checkout.
-For co-development, explicitly substitute a local library checkout with Gradle's
-`--include-build /path/to/KetraTerm` option. Keep that substitution local.
-See [dependencies and local builds](Module.md#dependencies-and-local-build).
+Builds resolve the published KetraTerm libraries at the version pinned in
+[gradle.properties](gradle.properties). See [dependencies](Module.md#dependencies-and-local-build).
 
 ## Documentation
 

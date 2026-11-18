@@ -76,9 +76,7 @@ the bundled Git and Gradle integrations declared in `plugin.xml`.
 Central and KetraTerm snapshots from Sonatype. Dependencies in
 [build.gradle.kts](build.gradle.kts) use
 `io.github.ketraterm` coordinates and the independent `ketratermVersion` property.
-There is no parent-checkout dependency. Optional local source substitution uses
-Gradle's `--include-build` command-line option. IDE test connectors are owned by
-this repository's test sources; the library repository's testkit is not required.
+The plugin's test sources provide the IDE test connectors.
 
 The plugin relies on IntelliJ's Kotlin and coroutine runtime, and its Pty4J/JNA
 native stack. The build excludes duplicate runtime artifacts from the plugin
