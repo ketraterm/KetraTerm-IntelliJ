@@ -19,6 +19,7 @@ import com.intellij.configurationStore.deserialize
 import com.intellij.configurationStore.serialize
 import com.intellij.openapi.progress.ProcessCanceledException
 import io.github.ketraterm.host.HostControlPolicy
+import io.github.ketraterm.host.HostPolicy
 import io.github.ketraterm.host.TerminalClipboardPermission
 import io.github.ketraterm.host.TerminalClipboardPolicy
 import io.github.ketraterm.host.TerminalTitlePermission
@@ -196,6 +197,8 @@ class KetraTermIntellijSettingsTest {
             settings.addChangeListener { observed += settings.createHostPolicy().clipboardPolicy.readPermission }
             settings.loadState(xml.deserialize(KetraTermIntellijSettings.State::class.java))
             assertEquals(fontSize, settings.state.fontSize)
+            assertEquals(TerminalClipboardPermission.ALLOW, settings.createHostPolicy().clipboardPolicy.writePermission)
+            assertEquals(TerminalTitlePermission.ALLOW, settings.createHostPolicy().titlePolicy.permission)
             assertEquals(TerminalClipboardPermission.DENY, settings.createHostPolicy().clipboardPolicy.readPermission)
             assertEquals(listOf(TerminalClipboardPermission.DENY), observed)
             settings.replaceState(settings.state.copy(visualBell = !settings.state.visualBell))
@@ -211,18 +214,70 @@ class KetraTermIntellijSettingsTest {
     }
 
     @Test
-    fun `invalid XML read choices normalize to persisted Deny`() {
-        for (invalid in listOf("", "unknown", "allowlist")) {
-            val xml =
-                Element("State").addContent(
-                    Element("option").setAttribute("name", "clipboardRead").setAttribute("value", invalid),
+    fun `invalid XML permission choices deny only that permission and survive restart`() {
+        for (field in listOf("clipboardWrite", "clipboardRead", "titlePermission")) {
+            val malformed =
+                listOf("", " ", "unknown", "allowlist", "deny,allow") + if (field == "titlePermission") listOf("prompt") else emptyList()
+            for (invalid in malformed) {
+                val settings = KetraTermIntellijSettings()
+                val original = settings.state
+                val xml = requireNotNull(serialize(original))
+                xml.getChildren("option").filter { it.getAttributeValue("name") == field }.forEach(xml::removeContent)
+                xml.addContent(Element("option").setAttribute("name", field).setAttribute("value", invalid))
+                val expected =
+                    when (field) {
+                        "clipboardWrite" -> original.copy(clipboardWrite = "deny")
+                        "clipboardRead" -> original.copy(clipboardRead = "deny")
+                        else -> original.copy(titlePermission = "deny")
+                    }
+                settings.addChangeListener { assertEquals("Listeners must observe the denied policy", expected, settings.state) }
+
+                settings.loadState(xml.deserialize(KetraTermIntellijSettings.State::class.java))
+
+                assertEquals("Malformed $field must not change other preferences", expected, settings.state)
+                val policy = settings.createHostPolicy()
+                assertEquals(
+                    TerminalClipboardPermission.valueOf(expected.clipboardWrite.uppercase()),
+                    policy.clipboardPolicy.writePermission,
                 )
-            val settings = KetraTermIntellijSettings()
-            settings.loadState(xml.deserialize(KetraTermIntellijSettings.State::class.java))
-            assertEquals(TerminalClipboardPermission.DENY, settings.createHostPolicy().clipboardPolicy.readPermission)
-            val restored = KetraTermIntellijSettings()
-            restored.loadState(requireNotNull(serialize(settings.state)).deserialize(KetraTermIntellijSettings.State::class.java))
-            assertEquals(settings.state, restored.state)
+                assertEquals(TerminalClipboardPermission.valueOf(expected.clipboardRead.uppercase()), policy.clipboardPolicy.readPermission)
+                assertEquals(TerminalTitlePermission.valueOf(expected.titlePermission.uppercase()), policy.titlePolicy.permission)
+                val saved = requireNotNull(serialize(settings.state))
+                assertEquals(
+                    "deny",
+                    saved.getChildren("option").single { it.getAttributeValue("name") == field }.getAttributeValue("value"),
+                )
+                val restored = KetraTermIntellijSettings()
+                restored.loadState(saved.deserialize(KetraTermIntellijSettings.State::class.java))
+                assertEquals(expected, restored.state)
+            }
+        }
+    }
+
+    @Test
+    fun `valid explicit permissions remain canonical at both publication boundaries`() {
+        for (write in listOf("allow", "prompt", "deny")) {
+            for (read in listOf("allow", "prompt", "deny")) {
+                for (title in listOf("allow", "deny")) {
+                    for (replace in listOf(false, true)) {
+                        val settings = KetraTermIntellijSettings()
+                        val expected = settings.state.copy(clipboardWrite = write, clipboardRead = read, titlePermission = title)
+                        val input =
+                            expected.copy(
+                                clipboardWrite = " ${write.uppercase()} ",
+                                clipboardRead = " ${read.uppercase()} ",
+                                titlePermission = " ${title.uppercase()} ",
+                            )
+                        if (replace) settings.replaceState(input) else settings.loadState(input)
+                        assertEquals(expected, settings.state)
+                        val restored = KetraTermIntellijSettings()
+                        restored.loadState(
+                            requireNotNull(serialize(settings.state)).deserialize(KetraTermIntellijSettings.State::class.java),
+                        )
+                        assertEquals(expected, restored.state)
+                    }
+                }
+            }
         }
     }
 
@@ -600,19 +655,23 @@ class KetraTermIntellijSettingsTest {
     }
 
     @Test
-    fun `normalizer uses field specific security defaults for invalid persisted values`() {
-        val state =
-            KetraTermIntellijSettingsNormalizer.normalize(
-                KetraTermIntellijSettings.State(
-                    clipboardWrite = "invalid",
-                    clipboardRead = "invalid",
-                    titlePermission = "invalid",
-                ),
-            )
+    fun `invalid permissions are denied before listeners run at both publication boundaries`() {
+        for (replace in listOf(false, true)) {
+            val settings = KetraTermIntellijSettings()
+            val observed = mutableListOf<HostPolicy>()
+            settings.addChangeListener { observed += settings.createHostPolicy() }
+            val input = settings.state.copy(clipboardWrite = "invalid", clipboardRead = "invalid", titlePermission = "invalid")
 
-        assertEquals(TerminalClipboardPermission.ALLOW.name.lowercase(), state.clipboardWrite)
-        assertEquals(TerminalClipboardPermission.DENY.name.lowercase(), state.clipboardRead)
-        assertEquals(TerminalTitlePermission.ALLOW.name.lowercase(), state.titlePermission)
+            if (replace) settings.replaceState(input) else settings.loadState(input)
+
+            assertEquals("deny", settings.state.clipboardWrite)
+            assertEquals("deny", settings.state.clipboardRead)
+            assertEquals("deny", settings.state.titlePermission)
+            val published = observed.single()
+            assertEquals(TerminalClipboardPermission.DENY, published.clipboardPolicy.writePermission)
+            assertEquals(TerminalClipboardPermission.DENY, published.clipboardPolicy.readPermission)
+            assertEquals(TerminalTitlePermission.DENY, published.titlePolicy.permission)
+        }
     }
 
     @Test

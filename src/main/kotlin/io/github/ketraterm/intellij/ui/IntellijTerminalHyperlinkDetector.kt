@@ -263,13 +263,25 @@ internal class IntellijTerminalHyperlinkDetector(
                                         SwingHyperlinkTextPosition(first.value.firstRow, item.highlightStartOffset - first.key),
                                         SwingHyperlinkTextPosition(last.value.firstRow, item.highlightEndOffset - last.key),
                                     )
+                                val implicitPath =
+                                    info is FileHyperlinkInfo &&
+                                        first.key == start &&
+                                        last.key == start &&
+                                        item.highlightAttributes == null &&
+                                        item.followedHyperlinkAttributes == null &&
+                                        isBareAbsolutePath(text, item.highlightStartOffset - start, item.highlightEndOffset - start)
                                 val consumed = SwingHyperlinkTextPosition(source.firstRow, text.length)
                                 SwingHyperlink(
                                     range,
                                     SwingHyperlinkTextRange(checkNotNull(chain.start), consumed),
                                     IntellijTerminalHyperlinkAction(project, info),
-                                    presentation = intellijHyperlinkPresentation(item),
-                                    activation = SwingHyperlinkActivation.DIRECT,
+                                    presentation =
+                                        if (implicitPath) {
+                                            intellijImplicitHyperlinkPresentation()
+                                        } else {
+                                            intellijHyperlinkPresentation(item)
+                                        },
+                                    activation = if (implicitPath) SwingHyperlinkActivation.MODIFIER else SwingHyperlinkActivation.DIRECT,
                                     consumedThrough = consumed,
                                     providerOrder = order + 2,
                                 )
@@ -347,6 +359,18 @@ internal class IntellijTerminalHyperlinkDetector(
         val FILE_REFERENCE =
             Regex("""(?:"([^"\r\n]+)"|'([^'\r\n]+)'|((?:[A-Za-z]:[\\/])?[^\s"'<>|:()]+))(?::(\d+)(?::(\d+))?|\((\d+)(?:,(\d+))?\))?""")
     }
+}
+
+private fun isBareAbsolutePath(
+    text: String,
+    start: Int,
+    end: Int,
+): Boolean {
+    if (start >= end) return false
+    val first = text[start]
+    return first == '/' ||
+        (end - start >= 2 && first == '\\' && text[start + 1] == '\\') ||
+        (end - start >= 3 && first.isLetter() && text[start + 1] == ':' && text[start + 2] in "/\\")
 }
 
 /** Includes the full token and its delimiters because punctuation can extend a URL match later. */

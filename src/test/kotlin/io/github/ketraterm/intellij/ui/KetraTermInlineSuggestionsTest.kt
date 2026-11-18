@@ -15,6 +15,9 @@
  */
 package io.github.ketraterm.intellij.ui
 
+import com.intellij.openapi.actionSystem.*
+import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.util.io.FileUtil
@@ -28,7 +31,9 @@ import io.github.ketraterm.intellij.services.KetraTermCompletionService
 import io.github.ketraterm.intellij.settings.KetraTermIntellijSettings
 import io.github.ketraterm.intellij.support.MockConnector
 import io.github.ketraterm.session.*
+import io.github.ketraterm.shell.integration.OscShellIntegration
 import io.github.ketraterm.transport.TerminalConnector
+import io.github.ketraterm.ui.swing.host.SwingTerminalHostAction
 import io.github.ketraterm.ui.swing.settings.TerminalClipboardHandler
 import io.github.ketraterm.ui.swing.suggestion.SwingShellSuggestionAcceptanceResult
 import io.github.ketraterm.ui.swing.suggestion.SwingShellSuggestionRequest
@@ -42,7 +47,9 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertArrayEquals
 import java.awt.event.FocusEvent
+import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import java.util.concurrent.Callable
 import java.util.concurrent.FutureTask
@@ -124,7 +131,74 @@ class KetraTermInlineSuggestionsTest : BasePlatformTestCase() {
             assertTrue(fixture.writes.tryReceive().isFailure)
         }
 
-    private fun withPane(test: (Fixture) -> Unit) {
+    fun testCtrlSpaceReachesApplicationWithoutAnEditableShellCommand() =
+        withPane { fixture ->
+            onEdt {
+                fixture.commandLine.value = null
+                fixture.pane.terminal.hideShellSuggestions()
+                assertTrue(fixture.pane.terminal.hasShellSuggestionProvider)
+                assertSuggestionActionEnabled(fixture, false)
+                assertFalse(fixture.pane.performTerminalAction(SwingTerminalHostAction.REQUEST_SUGGESTIONS))
+                fixture.pressKey(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK, ' ')
+            }
+            assertArrayEquals(byteArrayOf(0), fixture.nextWrite())
+        }
+
+    fun testCtrlSpaceReachesTuiOnAlternateScreen() =
+        withPane(oscIntegration = true) { fixture ->
+            fixture.connector.feedFromHost("\u001b[?1049h".encodeToByteArray())
+            onEdt {
+                assertNull(fixture.session.activeShellCommandLine())
+                assertTrue(fixture.pane.terminal.hasShellSuggestionProvider)
+                assertSuggestionActionEnabled(fixture, false)
+                assertFalse(fixture.pane.performTerminalAction(SwingTerminalHostAction.REQUEST_SUGGESTIONS))
+                fixture.pressKey(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK, ' ')
+            }
+            assertArrayEquals(byteArrayOf(0), fixture.nextWrite())
+        }
+
+    fun testCtrlSpaceStartsSuggestionsWithAutomaticPopupsDisabledWithoutSendingInput() =
+        withPane { fixture ->
+            fixture.awaitPreview()
+            onEdt {
+                fixture.pane.terminal.hideShellSuggestions()
+                fixture.pane.terminal.clearInlineShellSuggestion()
+                assertNull(fixture.pane.terminal.inlineShellSuggestionPresentation.value)
+                assertFalse(fixture.settings.state.shellSuggestionsEnabled)
+                assertSuggestionActionEnabled(fixture, true)
+                fixture.pressKey(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK, ' ')
+            }
+            assertNotNull(fixture.awaitPreview().selectedSuggestion)
+            onEdt { fixture.pressKey(KeyEvent.VK_F6) }
+            // The following input acknowledges the same input queue; Ctrl+Space must not precede it.
+            assertArrayEquals("\u001b[17~".encodeToByteArray(), fixture.nextWrite())
+        }
+
+    private fun assertSuggestionActionEnabled(
+        fixture: Fixture,
+        expected: Boolean,
+    ) {
+        val action = requireNotNull(ActionManager.getInstance().getAction(KetraTermTerminalActionIds.REQUEST_SUGGESTIONS))
+        val event =
+            AnActionEvent.createEvent(
+                SimpleDataContext
+                    .builder()
+                    .add(KetraTermTerminalData.PANE, fixture.pane)
+                    .add(PlatformCoreDataKeys.CONTEXT_COMPONENT, fixture.pane.terminal)
+                    .build(),
+                action.templatePresentation.clone(),
+                ActionPlaces.KEYBOARD_SHORTCUT,
+                ActionUiKind.NONE,
+                null,
+            )
+        assertTrue(ActionUtil.updateAction(action, event).isPerformed)
+        assertEquals(expected, event.presentation.isEnabled)
+    }
+
+    private fun withPane(
+        oscIntegration: Boolean = false,
+        test: (Fixture) -> Unit,
+    ) {
         val settings = KetraTermIntellijSettings()
         settings.replaceState(
             settings.state.copy(
@@ -169,11 +243,19 @@ class KetraTermInlineSuggestionsTest : BasePlatformTestCase() {
                             check(writes.trySend(bytes.copyOfRange(offset, offset + length)).isSuccess)
                         }
                     },
-                shellIntegration = TerminalShellIntegrationFactory.host(TerminalShellIntegrationState(), editable),
+                shellIntegration =
+                    if (oscIntegration) {
+                        OscShellIntegration
+                    } else {
+                        TerminalShellIntegrationFactory.host(
+                            TerminalShellIntegrationState(),
+                            editable,
+                        )
+                    },
             ).use { session ->
                 val bound = CompletableDeferred<Unit>()
                 session.start(80, 4)
-                editable.value = TerminalShellCommandLineSnapshot(COMMAND, COMMAND.length, COMMAND.length, 0)
+                if (!oscIntegration) editable.value = TerminalShellCommandLineSnapshot(COMMAND, COMMAND.length, COMMAND.length, 0)
                 val pane =
                     onEdt {
                         val tab =
@@ -206,21 +288,24 @@ class KetraTermInlineSuggestionsTest : BasePlatformTestCase() {
                         }
                     }
                     runBlocking { withTimeout(10.seconds) { resized.await() } }
-                    connector.feedFromHost("$COMMAND\u001b[0m".encodeToByteArray())
-                    editable.value = TerminalShellCommandLineSnapshot(COMMAND, COMMAND.length, COMMAND.length, 0)
+                    val prompt = if (oscIntegration) "\u001b]133;A\u0007$ \u001b]133;B\u0007" else ""
+                    connector.feedFromHost("$prompt$COMMAND\u001b[0m".encodeToByteArray())
+                    if (!oscIntegration) editable.value = TerminalShellCommandLineSnapshot(COMMAND, COMMAND.length, COMMAND.length, 0)
                     onEdt {
                         assertNotNull("Editable context must be current after initial resize", session.captureCommandEdit())
                         pane.terminal.focusListeners.forEach { it.focusGained(FocusEvent(pane.terminal, FocusEvent.FOCUS_GAINED)) }
-                        assertNotNull(
-                            "Suffix preview must have a fully rendered editing context",
-                            session.captureCommandSuffixPreview(
-                                requireNotNull(session.captureCommandEdit()),
-                                "tus",
-                            ),
-                        )
+                        if (!oscIntegration) {
+                            assertNotNull(
+                                "Suffix preview must have a fully rendered editing context",
+                                session.captureCommandSuffixPreview(
+                                    requireNotNull(session.captureCommandEdit()),
+                                    "tus",
+                                ),
+                            )
+                        }
                     }
                     test(
-                        Fixture(pane, settings, session, writes) {
+                        Fixture(pane, settings, session, writes, editable, connector) {
                             COMMAND.indices.joinToString("") { String(Character.toChars(buffer.getCodepointAt(it, 0))) }
                         },
                     )
@@ -236,8 +321,21 @@ class KetraTermInlineSuggestionsTest : BasePlatformTestCase() {
         val settings: KetraTermIntellijSettings,
         val session: TerminalSession,
         val writes: Channel<ByteArray>,
+        val commandLine: TerminalShellCommandLineState,
+        val connector: MockConnector,
         val bufferText: () -> String,
     ) {
+        fun pressKey(
+            keyCode: Int,
+            modifiers: Int = 0,
+            keyChar: Char = KeyEvent.CHAR_UNDEFINED,
+        ) {
+            val event = KeyEvent(pane.terminal, KeyEvent.KEY_PRESSED, 0L, modifiers, keyCode, keyChar)
+            pane.terminal.keyListeners.forEach { it.keyPressed(event) }
+        }
+
+        fun nextWrite(): ByteArray = runBlocking { withTimeout(10.seconds) { writes.receive() } }
+
         fun awaitPreview(): SwingShellSuggestionSnapshot =
             runBlocking {
                 withTimeout(10.seconds) {

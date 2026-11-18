@@ -143,8 +143,11 @@ internal class KetraTermTerminalPane private constructor(
             SwingTerminalHostAction.COPY_SELECTION -> terminal.currentSelection() != null
             SwingTerminalHostAction.OPEN_SEARCH -> fromContextMenu || KetraTermIntellijSettings.getInstance().overrideIdeShortcuts()
             SwingTerminalHostAction.REQUEST_SUGGESTIONS ->
-                KetraTermIntellijSettings.getInstance().state.smartSuggestionsEnabled &&
-                    terminal.hasShellSuggestionProvider
+                !closed &&
+                    KetraTermIntellijSettings.getInstance().state.smartSuggestionsEnabled &&
+                    terminal.hasShellSuggestionProvider &&
+                    terminal.viewportState().isAtLiveViewport &&
+                    tab.session.activeShellCommandLine() != null
             SwingTerminalHostAction.SELECT_ALL,
             SwingTerminalHostAction.CLEAR_SCREEN,
             SwingTerminalHostAction.PASTE_CLIPBOARD,
@@ -165,14 +168,7 @@ internal class KetraTermTerminalPane private constructor(
             SwingTerminalHostAction.PASTE_CLIPBOARD -> terminal.pasteClipboardText()
             SwingTerminalHostAction.SELECT_ALL -> terminal.selectAll()
             SwingTerminalHostAction.CLEAR_SCREEN -> terminal.clearScreen()
-            SwingTerminalHostAction.REQUEST_SUGGESTIONS -> {
-                if (isTerminalActionEnabled(action)) {
-                    terminal.requestActiveShellSuggestions()
-                    true
-                } else {
-                    false
-                }
-            }
+            SwingTerminalHostAction.REQUEST_SUGGESTIONS -> requestShellSuggestions()
             SwingTerminalHostAction.OPEN_SEARCH -> {
                 openSearch()
                 true
@@ -185,6 +181,15 @@ internal class KetraTermTerminalPane private constructor(
                 true
             }
         }
+
+    private fun requestShellSuggestions(): Boolean {
+        if (!isTerminalActionEnabled(SwingTerminalHostAction.REQUEST_SUGGESTIONS)) return false
+        val provider = completionService?.providerFor(project, tab) ?: return false
+        val interaction = terminal.beginActiveShellSuggestionInteraction() ?: return false
+        terminal.presentShellSuggestions(interaction)
+        terminal.requestShellSuggestions(interaction, provider)
+        return true
+    }
 
     /** Command capabilities use metadata only; action updates never extract terminal text. */
     fun canNavigateCommands(): Boolean =
