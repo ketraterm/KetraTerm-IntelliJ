@@ -1,6 +1,6 @@
 # KetraTerm IntelliJ Plugin Changelog
 
-## [Unreleased]
+## [1.0.1] - 2026-11-18
 
 - Updated the terminal libraries to the stable KetraTerm 1.0.0 release.
 - Ctrl+Space reaches terminal applications when shell suggestions cannot start.
